@@ -1,0 +1,5 @@
+# Windows GNU toolchain. The linker (gcc) and dlltool come from a portable MinGW-w64 that
+# `. .\env.ps1` puts on PATH (see docs/TOOLCHAIN.md); nothing here is machine-specific.
+[target.x86_64-pc-windows-gnu]
+linker = "gcc"
+rustflags = ["-C", "dlltool=dlltool"]

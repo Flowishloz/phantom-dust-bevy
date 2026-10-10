@@ -1,0 +1,62 @@
+# Game data and anything derived from it: never commit (copyright).
+game_files/
+engine/cache/
+engine/shots/
+# Copies of game wavs made for the by-ear sound audition (engine/audition/).
+engine/audition/
+
+# Build output
+engine/target/
+engine/target2/
+
+# Third-party tools and installers (fetched, not ours)
+tools/UWPDumper/
+tools/*.zip
+tools/*.exe
+tools/Esper-RE/
+tools/pd_loader_core/
+tools/disasm/*.exe
+
+# UWPDumper log (lists game files)
+Microsoft.MSEsper_*.txt
+docs/research/Microsoft.MSEsper_*.txt
+
+# Agent worktrees (Claude Code) and orchestration lanes; finished lanes are parked in _archive/
+.claude/worktrees/
+lanes/
+_archive/
+# Player data made by the game (saved arsenals, etc.)
+engine/userdata/
+
+# Laurence's reference screenshots of the original game (game-derived, never commit)
+Reference Images/
+__pycache__/
+engine/play/
+# (Valve's steam_api64.dll is NOT redistributed here; see LEGAL.md. The steamworks-sys crate ships one and
+# build.rs copies it next to the built exe.)
+steam_api64.dll
+steam_appid.txt
+
+# In-game bug reports (F8): screenshots of game assets, never commit
+engine/bug_reports/
+# regen_cache.sh output before it is swapped in for engine/cache
+engine/cache.new/
+engine/cache.old/
+
+# Safety net: formats of the original game and anything decoded from it never go in this repo.
+*.alr
+*.ala
+*.stx
+*.ssb
+*.cad
+*.epa
+*.eft
+*.pdcl
+*.pdm
+*.dds
+*.cso
+*.mp4
+*.iso
+*.xiso
+*.bin
+!engine/vendor/**/*.bin

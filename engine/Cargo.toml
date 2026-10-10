@@ -1,0 +1,31 @@
+﻿[workspace]
+resolver = "2"
+members = ["crates/pd_formats", "crates/pd_convert", "crates/pd_viewer", "crates/pd_game"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[profile.dev]
+opt-level = 1
+# Full debug info pushes a Bevy binary past Windows' 2 GB executable limit on
+# the GNU toolchain.
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
+
+# Laurence's game copy (engine\play, PLAY.bat): fully optimised, no debug assertions
+# (`cargo build --profile play -p pd_game` -> target\play\pd_game.exe). Overnight perf 2026-10-09.
+[profile.play]
+inherits = "release"
+debug = false
+
+# Upstream bevy_gilrs 0.19.1 sends a weak-motor rumble request to the strong (left) motor
+# (rumble.rs builds both as `BaseEffectType::Strong`). The original game drives both motors
+# (docs/RUMBLE.md), so this copy fixes that one line and logs force-feedback support when a pad
+# connects. Delete this patch to go back to upstream (everything still builds; only the right
+# motor then buzzes on the left).
+[patch.crates-io]
+bevy_gilrs = { path = "vendor/bevy_gilrs" }
