@@ -278,6 +278,15 @@ impl Combat {
         self.fighters[i].root = Some((clip, 0.0));
     }
 
+    /// The start clip of a movement skill's jump (Jump, Levitate, Skywalk, Demon's Wing): state 4
+    /// enters JUMP_START through `FUN_140257310` with the root-motion argument 1 (`0x140257b90`), so
+    /// the clip's root track moves the body for the wind-up (LIVE `239_Jump` / `056_Levitate` /
+    /// `292_Demon_s_Wing`: 5.53 u forward over the 13 program ticks, the curve's value at frame 13).
+    /// `Combat::tick_fighter` drops it at the take-off (state 5 plays JUMP_UP with root 0).
+    pub(crate) fn root_jump_start(&mut self, i: usize) {
+        self.fighters[i].root = Some(("JUMP_START", 0.0));
+    }
+
     /// One sim tick of root motion (`0x140257510`): the clip's root track moves the body by its
     /// x / z change over the tick, rotated by the facing (`+0x12e00` matrix: forward = (sin yaw,
     /// cos yaw), side = (cos yaw, -sin yaw) at yaw 0 = +X, the exporter's convention). The
@@ -396,8 +405,10 @@ mod tests {
     }
 
     #[test]
-    fn a_lifted_body_stays_in_its_reaction_until_it_is_back_on_the_ground() {
-        // `0x14025c1a0`: at timer 0 the state only goes idle when grounded (`+0x12e74 != 0`).
+    fn a_lifted_body_still_in_the_air_when_the_float_ends_falls_in_the_knock_down_state() {
+        // `FUN_140257c70` (physics, airborne): states 14-16 go to state 17 with clip 0x3b (WALLHIT_BACK_LOOP, a
+        // front-set clip) when the float status is over; it lands like a knock-down (`FUN_140254c80`) and lies.
+        // LIVE `303_Antigravity_Trap`: state 17 from the apex, landing sounds 0.82 + 0.70, still 17 afterwards.
         let (mut c, mut p, col) = setup(vec![], 100.0);
         rows(&mut c);
         c.fighters[1].reaction_row = 21;
@@ -408,12 +419,15 @@ mod tests {
         c.fighters[1].action_ticks = 2;
         c.fighters[1].status.hover_ticks = 0;
         c.fighters[1].lift_launch = None;
-        run(&mut c, &mut p, &col, 5);
-        assert_eq!(c.fighters[1].action, Action::Hit, "held until it lands");
-        p[1].grounded = true;
-        run(&mut c, &mut p, &col, 2);
-        assert_eq!(c.fighters[1].action, Action::Ready);
-        assert!(!c.fighters[1].lift_hold);
+        run(&mut c, &mut p, &col, 3);
+        let f = &c.fighters[1];
+        assert_eq!((f.action, f.flying, f.front_set, f.lift_hold), (Action::Knocked, true, true, false), "state 17 from the apex");
+        assert_eq!(c.reaction_clip(1), "WALLHIT_BACK_LOOP");
+        run(&mut c, &mut p, &col, 120);
+        assert!(c.events.iter().any(|e| e.1 == CombatEvent::KnockLanded { who: 1 }), "a knock-down landing, with its sounds");
+        let f = &c.fighters[1];
+        assert_eq!((f.action, f.flying), (Action::Knocked, false), "lying, not up");
+        assert_eq!(c.lying_pose(1), 60, "the small landing of the front set lies DOWN_FRONT");
     }
 
     #[test]

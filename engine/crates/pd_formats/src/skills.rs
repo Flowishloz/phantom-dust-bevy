@@ -615,7 +615,7 @@ mod tests {
     /// engine/cache/skills.json <id>`.
     #[test]
     fn golden_checks_against_real_gsdata() {
-        let path = std::path::Path::new("../../../game_files/Assets/Data/gstorage/gsdata_en.dat");
+        let path = std::path::Path::new("C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/Assets/Data/gstorage/gsdata_en.dat");
         let Ok(d) = std::fs::read(path) else {
             eprintln!("skipping golden_checks_against_real_gsdata: {} not found", path.display());
             return;
@@ -663,7 +663,7 @@ mod tests {
     /// built from.
     #[test]
     fn rule_table_handicaps_and_quick_decks_against_real_gsdata() {
-        let path = std::path::Path::new("../../../game_files/Assets/Data/gstorage/gsdata_en.dat");
+        let path = std::path::Path::new("C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/Assets/Data/gstorage/gsdata_en.dat");
         let Ok(d) = std::fs::read(path) else {
             eprintln!("skipping rule_table_handicaps_and_quick_decks_against_real_gsdata: {} not found", path.display());
             return;

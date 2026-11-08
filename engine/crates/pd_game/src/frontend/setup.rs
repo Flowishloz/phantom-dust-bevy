@@ -1456,7 +1456,7 @@ fn describe(state: &SetupState, ctx: &Ctx, seat: usize) -> String {
                 _ => "Teams are off: everyone fights for themselves. Turn on Teams in TEAM PLAY on the next screen.".into(),
             }
         }
-        Page::Rules if state.prop_hunt() && state.rcursor[seat] == R_TIME => "How long the seeker has to hunt each round (the clock starts when the seeker is released, after 20 seconds).".into(),
+        Page::Rules if state.prop_hunt() && state.rcursor[seat] == R_TIME => "How long the seeker has to hunt each round (the clock starts when the seeker is released, after 30 seconds).".into(),
         Page::Rules if state.prop_hunt() && state.rcursor[seat] == R_ROUNDS => "Kills that win the match. Only the seeker scores; the seeker changes every round, with no round limit.".into(),
         Page::Rules => match state.rcursor[seat] {
             R_GAMEMODE => modes::blurb(state.mode).into(),

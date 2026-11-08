@@ -1,7 +1,7 @@
 """Look up functions in a Ghidra decompile export (our own tool).
 
 The export (decomp_all.c, written by ExportDecomp.java) is decompiled game
-code: it stays outside the repo (%USERPROFILE%/.pdtools/re-out). Never paste
+code: it stays outside the repo (C:/Users/laure/.pdtools/re-out). Never paste
 its contents into the repo; describe logic in words with the address.
 
 Usage:

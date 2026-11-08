@@ -11,13 +11,12 @@ missing value (marked "?"); confirm a finding in Ghidra. Only direct `call rel32
 
 Usage:  python engine/re/call_consts.py <hex target address> [functions.txt] [--exe PDUWP.exe]
 """
-import os
 import bisect
 import struct
 import sys
 
-EXE = r"../../../game_files/PDUWP.exe"
-FUNCS = os.path.expandvars(r"%USERPROFILE%/.pdtools/re-out/functions.txt")
+EXE = r"C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/PDUWP.exe"
+FUNCS = r"C:/Users/laure/.pdtools/re-out/functions.txt"
 BASE = 0x140000000
 TEXT_RVA, TEXT_RAW, TEXT_SIZE = 0x1000, 0x400, 0x2D1600
 ARGS = {1: "rcx", 2: "rdx", 8: "r8", 9: "r9"}  # register number -> Windows x64 argument register

@@ -335,8 +335,8 @@ import time  # noqa: E402
 import live_trace as lt  # noqa: E402
 import save_guard as sg  # noqa: E402
 
-EXE_DEFAULT = r"..\..\..\game_files\PDUWP.exe"
-OUT_ROOT = os.path.expandvars(r"%USERPROFILE%\.pdtools\moverec")
+EXE_DEFAULT = r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\PDUWP.exe"
+OUT_ROOT = r"C:\Users\laure\.pdtools\moverec"
 
 
 class Rig(lt.Tracer):
@@ -849,7 +849,7 @@ class Capture:
     """ffmpeg capture of the game window only (Windows Graphics Capture: films that window even
     while it is covered or unfocused; it needs the window to exist on an active desktop)."""
 
-    FFMPEG = os.path.expandvars(r"%USERPROFILE%\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+    FFMPEG = (r"C:\Users\laure\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
               r"\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe")
 
     def __init__(self, out_path, fps=30, hwnd=None, ffmpeg=None, seconds=None):
@@ -1137,7 +1137,7 @@ def default_script_for(skill, slot=0):
 
 
 # ======================================================================= batch + CLI
-SKILLS_JSON = r"..\..\cache\skills.json"
+SKILLS_JSON = r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\cache\skills.json"
 OWNED_CSV = os.path.join(OUT_ROOT, "owned_skills.csv")
 PILOT_IDS = (65, 3, 80, 49)      # Laser, Psycho Knife, Blaster, Speed Up (+ the Aura Particle script below)
 

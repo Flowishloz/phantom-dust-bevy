@@ -42,7 +42,6 @@ no unrequested Skate/Prop Hunt/modding expansion during these passes.
 
 ## Historical baseline (2026-09-26; not current acceptance)
 
-- [x] Unlock game files (community dump tool; not documented here) → `game_files/`
 - [x] ALR parser: stages, textures, vertex formats; all 831 files parse
 - [x] Music STX → WAV
 - [x] Skinned characters with bone palettes, 129 animations, multi-part grafting, confirmed rotation convention

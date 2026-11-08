@@ -4,6 +4,13 @@ Fixed bugs, newest first. One entry per Laurence report: what he saw, what
 caused it, what fixed it, and the proof. Closes the loop on a report so it
 stays fixed -- each entry names the regression test that pins it.
 
+## Invisible walls along the sides of the Palace stairs (2026-10-15)
+
+- **Symptom:** Laurence: "I can walk under it now, but only because the invisible barrier is now hollow and is missing a face. Two faces still persist along the sides of the stairs." Walking toward the bottom step under a flight was fine (head meets the slab); walking ACROSS under a flight, to the other side, hit an invisible wall.
+- **Cause (MEASURED):** the 0x94 wedge under each flight has FOUR class-0x12 walls, not three: the outer side's wall (x -112.65 / +113.17, floor to soffit, z -148.2 .. -204.6) was kept on the belief that a real hall wall stands there. None does: the flights stand free and the hall floor runs on past them (the render only has the stair's own side faces above the soffit). In-game (PLAY copy, `PD_TEST_SPAWN` + `PD_STEP_LOG`): at z -195 a fighter walking out stopped at x -107.7 and one walking in from the wing stopped at x -117.7; at z -215 (past the wedge) he walked straight through.
+- **Fix:** `stairs_under.rs` removes and re-cuts both side walls the same way (each cut to the head line, so the low pocket stays closed from both sides).
+- **Proof:** `stairs_under::tests::a_body_can_walk_under_the_flight_where_there_is_headroom` now walks across and out both ways (west flight -60 -> -191.4 and -150 -> 50.3; east mirrored); `the_low_pocket_stays_closed` checks both sides. pd_game 1241 pass.
+
 ## Bomb: a square while it is thrown (2026-10-09, bombsq lane) -- OPEN, needs Laurence's pick
 
 - **Symptom:** Laurence: "Bomb still has a square texture whilst being thrown" (play copy fa724aa).

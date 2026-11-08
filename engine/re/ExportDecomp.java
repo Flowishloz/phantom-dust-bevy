@@ -1,6 +1,6 @@
 // Headless Ghidra script (our own code): decompile every function in the
 // current program and write them to one text file, plus a function list.
-// Output folder = first script argument (default %USERPROFILE%/.pdtools/re-out).
+// Output folder = first script argument (default C:/Users/laure/.pdtools/re-out).
 // Usage (see docs/PROGRAM-RE.md):
 //   analyzeHeadless <proj> PDUWP -process PDUWP.exe -noanalysis -readOnly
 //     -scriptPath engine/re -postScript ExportDecomp.java <outdir>
@@ -14,7 +14,7 @@ public class ExportDecomp extends GhidraScript {
     @Override
     public void run() throws Exception {
         String[] args = getScriptArgs();
-        String out = args.length > 0 ? args[0] : System.getenv("USERPROFILE") + "/.pdtools/re-out";
+        String out = args.length > 0 ? args[0] : "C:/Users/laure/.pdtools/re-out";
         DecompInterface d = new DecompInterface();
         d.openProgram(currentProgram);
         FunctionIterator it = currentProgram.getFunctionManager().getFunctions(true);

@@ -75,7 +75,7 @@ This reads as a **layered billboard sprite for a glowing floating orb** — halo
 
 ### Footage (Laurence's recordings, 2026-09-28)
 
-Laurence recorded close-ups (`engine/shots/orb/footage/`, gitignored; source videos `%USERPROFILE%\Pictures\Phantom Dust - Orbs`): `red_idle.png`, `mat_close.png` (materialise sheet, ~1.5 s), `collect_close.png` / `collect_sheet.png` (pickup, both an attack capsule and an Aura Particle visible together).
+Laurence recorded close-ups (`engine/shots/orb/footage/`, gitignored; source videos `C:\Users\laure\Pictures\Phantom Dust - Orbs`): `red_idle.png`, `mat_close.png` (materialise sheet, ~1.5 s), `collect_close.png` / `collect_sheet.png` (pickup, both an attack capsule and an Aura Particle visible together).
 
 - **Idle capsule** (`red_idle.png`): a sphere with an **animated dark, swirling interior texture** (an attack capsule shows red/orange flame; the Aura Particle, from `collect_sheet.png`, shows a dark grey smoky/skull-like swirl instead), a **bright fresnel-style rim** in the capsule's colour (red for attack, white for Aura Particle), a **soft outer halo**, and a few tiny sparks drifting around it.
 - **Materialise** (`mat_close.png`, ~1.5 s): many **gold sparkle points** scattered over a wide floor area drift inward and gather into a spinning ball/vortex; the orb then **pops in with a red flare burst**, and its halo fades down to the steady idle look above.
@@ -100,7 +100,7 @@ Laurence recorded close-ups (`engine/shots/orb/footage/`, gitignored; source vid
 
 ## Program read 2026-09-28 (lead 6 done — definitive answer for the idle orb)
 
-Read from `PDUWP.exe` with the existing Ghidra export (`%USERPROFILE%\.pdtools\re-out\decomp_all.c`, `engine/re/decomp_fn.py`, `xref.py`, `exe_const.py`), then checked against the game files with `pd_convert info / texprobe / dumptex / drawinfo` and byte walks. No engine code changed. Legend as above: ✅ read in code and matched in data · ⚠️ one link inferred · ❓ open. (There is no `capsule.cpp` string in this build; the way in was the RTTI class names `pdvkCapsule2` / `pdvkCapEffect` / `pdvkEnvCapsule` and the render object the capsule setup creates.)
+Read from `PDUWP.exe` with the existing Ghidra export (`C:\Users\laure\.pdtools\re-out\decomp_all.c`, `engine/re/decomp_fn.py`, `xref.py`, `exe_const.py`), then checked against the game files with `pd_convert info / texprobe / dumptex / drawinfo` and byte walks. No engine code changed. Legend as above: ✅ read in code and matched in data · ⚠️ one link inferred · ❓ open. (There is no `capsule.cpp` string in this build; the way in was the RTTI class names `pdvkCapsule2` / `pdvkCapEffect` / `pdvkEnvCapsule` and the render object the capsule setup creates.)
 
 ### Where the capsule art lives ✅
 
@@ -552,7 +552,7 @@ Shipped: ring variant A. Laurence parked the orbs here; open items for a later p
 
 ## Regeneration motes (2026-10-01, lane capbirth)
 
-Laurence: "the particle motes when a capsule is regenerating are not present yet." Built: `capsule_birth.rs` + `capsule_birth.wgsl` (render only), a read-only `Combat::pending_capsules`, and a converter export (`<stem>.sprites.json`, `pd_formats::capsprites`). Everything below is labelled READ (program address, `PDUWP.exe`), MEASURED (Laurence's footage `Orb materialize.mp4`) or UNCONFIRMED. Footage frames are kept out of git in `%USERPROFILE%\.pdtools\footage\capbirth\`.
+Laurence: "the particle motes when a capsule is regenerating are not present yet." Built: `capsule_birth.rs` + `capsule_birth.wgsl` (render only), a read-only `Combat::pending_capsules`, and a converter export (`<stem>.sprites.json`, `pd_formats::capsprites`). Everything below is labelled READ (program address, `PDUWP.exe`), MEASURED (Laurence's footage `Orb materialize.mp4`) or UNCONFIRMED. Footage frames are kept out of git in `C:\Users\laure\.pdtools\footage\capbirth\`.
 
 ### Corrections to the earlier sections of this page
 
@@ -619,4 +619,4 @@ The 0xff is written to the render object's per-viewer fade bytes only when the r
 Unchanged and checked: they are in the list from the first tick (no `pending_capsules` entry, `respawn: false`), so no motes, no flare, no fade-in. `shots/capfx_open_t01*.png`: nothing at the spots up to tick 176, the orbs there at full size from tick ~180 (the countdown's START).
 
 ### Proof (`engine/shots`, not committed)
-`cf_sheet.png` (footage frames 135..160 on top, ours at ticks 250..300 below: pickup), `capfx_pick_t*.png` (the scripted pickup run, command below), `capfx_erase_t*.png` (Violent Change, id 284 via `--loadout`, six slot-3 bursts at tick 302; `PD_CAPBIRTH_LOG=1` prints `[capburst] tick N slot S`), `capfx_open_t*.png`. Footage frames in `%USERPROFILE%\.pdtools\footage\capfx\`. Pickup command: `PD_MUTE=1 PD_FREE_CAM=1 PD_TEST_SPAWN="-46.6,-260.166;90,-260.166" PD_TEST_PRESS=250,0 PD_SHOT_TICKS=250,260,270,280,290,300,320,340 pd_game.exe <cache> --near --start-hand 0 --stage st06 --screenshot shots\capfx_pick.png`; erase: the same with `PD_TEST_SPAWN="-4,-260.166;90,-260.166"` and `--loadout 284,1,1,1` in place of `--start-hand 0`. `PD_CAPSULE_PREVIEW=pickup|erase` spawns one burst in front of player 1 (`--demo`; off-camera in the demo's own view).
+`cf_sheet.png` (footage frames 135..160 on top, ours at ticks 250..300 below: pickup), `capfx_pick_t*.png` (the scripted pickup run, command below), `capfx_erase_t*.png` (Violent Change, id 284 via `--loadout`, six slot-3 bursts at tick 302; `PD_CAPBIRTH_LOG=1` prints `[capburst] tick N slot S`), `capfx_open_t*.png`. Footage frames in `C:\Users\laure\.pdtools\footage\capfx\`. Pickup command: `PD_MUTE=1 PD_FREE_CAM=1 PD_TEST_SPAWN="-46.6,-260.166;90,-260.166" PD_TEST_PRESS=250,0 PD_SHOT_TICKS=250,260,270,280,290,300,320,340 pd_game.exe <cache> --near --start-hand 0 --stage st06 --screenshot shots\capfx_pick.png`; erase: the same with `PD_TEST_SPAWN="-4,-260.166;90,-260.166"` and `--loadout 284,1,1,1` in place of `--start-hand 0`. `PD_CAPSULE_PREVIEW=pickup|erase` spawns one burst in front of player 1 (`--demo`; off-camera in the demo's own view).

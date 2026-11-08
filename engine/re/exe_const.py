@@ -15,7 +15,7 @@ runtime-only (.bss); this tool says so instead of printing garbage.
 import struct
 import sys
 
-EXE = r"../../../game_files/PDUWP.exe"
+EXE = r"C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/PDUWP.exe"
 BASE = 0x140000000
 # (rva, file offset, raw size)
 SECS = [(0x1000, 0x400, 0x2D1600), (0x2D3000, 0x2D1A00, 0x100400), (0x3D4000, 0x3D1E00, 0xE6800)]

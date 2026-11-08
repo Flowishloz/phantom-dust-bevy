@@ -555,6 +555,10 @@ struct LockSfx {
     /// Each fighter's `cast_seq` already voiced/sounded (kept here, not as a
     /// separate `Local`, to stay within Bevy's parameter limit).
     cast: [u16; MAX_PLAYERS],
+    /// Each fighter's `hit_seq` last frame: a status skill's reaction starting (r7sound).
+    hit_seq: [u16; MAX_PLAYERS],
+    /// Each fighter's (`cast_seq`, was in the melee dash `Lunge`) last frame: a melee blow's fire tick.
+    lunge: [(u16, bool); MAX_PLAYERS],
 }
 
 /// Sounds other render-side systems asked for this frame.
@@ -811,6 +815,50 @@ fn play_sfx(
         let from = event_source(&ev);
         cues.extend(cues_in_batch(&ev, |id| lib.skills.get(&id).cloned().unwrap_or_default(), reaction, &batch).into_iter().map(|cue| (cue, if let Cue::Voice(p, _) = cue { p } else { from })));
     }
+    // A status skill's own hit reaction (r7sound). READ: the hit of a skill with s43 = 0 calls vtable +0x48 =
+    // `FUN_14024fd80`, which starts the row s57 / s58 / s59 by recent damage or, when the effect took hold, the
+    // row s60 (`FUN_140258690`: `param_2 == 0` takes `param_3`), whatever the capsule colour; the row start
+    // plays the victim's voice from the row's group and the row's sound with the attacker's effect
+    // (`param_6` = the action row's w2, else s18: `0x14024fdba`; `FUN_140259310`). The sim starts that row
+    // in `status_skill_reaction` (bumping `hit_seq`); the `Hit` arm above stays silent for these skills.
+    // LIVE: Pressure / Lift Up / Antigravity Trap play common/100 (rows 20 / 21) and the victim's voice,
+    // Burden / Alleviate / Brain Concussion the voice (`moverec/takes_full`).
+    let status_hits: Vec<(usize, i16)> = fresh
+        .iter()
+        .filter_map(|e| if let CombatEvent::Hit { victim, skill, .. } = *e { Some((victim, skill)) } else { None })
+        .filter(|&(_, skill)| lib.skills.get(&skill).is_some_and(|s| s.no_reaction) && c.skill(skill).is_some_and(|d| d.raw[43] == 0))
+        .collect();
+    for i in c.roster.slots() {
+        let seq = c.fighters[i].hit_seq;
+        let started = seq != lock_sfx.hit_seq[i];
+        lock_sfx.hit_seq[i] = seq;
+        if !started {
+            continue;
+        }
+        if let Some(&(_, skill)) = status_hits.iter().find(|&&(v, _)| v == i) {
+            let (group, row_sound) = (c.reaction_voice_group(i), c.reaction_sound(i));
+            if let Some(v) = voice_of_group(group) {
+                cues.push((Cue::Voice(i, v), i));
+            }
+            if lib.skills.get(&skill).is_some_and(|s| s.has_effect) && (1..=9999).contains(&row_sound) {
+                cues.push((Cue::Sfx(row_sound as u32, VOL_SFX), i));
+            }
+        }
+    }
+    // A melee blow's fire tick (r7sound). READ: `FUN_1402626d0` plays s19 for every attack object it makes
+    // (`0x140262caa`), the melee blows included; our melee casts log no `SkillFired`, so the tick the cast
+    // leaves its dash (`Lunge` -> `Cast`, `Combat::lunge` at the fire tick) plays it. Ki Palm (313) is the
+    // only melee skill with an s19.
+    for i in c.roster.slots() {
+        let f = &c.fighters[i];
+        let was = lock_sfx.lunge[i];
+        lock_sfx.lunge[i] = (f.cast_seq, f.action == crate::combat::Action::Lunge);
+        if was.0 == f.cast_seq && was.1 && f.action == crate::combat::Action::Cast {
+            if let Some(n) = lib.skills.get(&f.cast_skill).and_then(|s| s.fire) {
+                cues.push((Cue::Sfx(n, VOL_SFX), i));
+            }
+        }
+    }
     // Lock-on blips: one per ON-toggle per fighter (O4). The sim counts
     // every toggle in `Player::lock_on_events`; `lock_on_cue` turns the
     // count difference into at most one cue and stays silent on unlocks,
@@ -1016,6 +1064,8 @@ fn object_sfx(
     let mut explained: Vec<i16> = Vec::new();
     // Shots whose life ran out this frame: silent (impact code 0, `CombatEvent::ShotExpired`).
     let mut expired: Vec<u32> = Vec::new();
+    // Blasts that started this frame (centre, radius): the objects they wear are blast victims.
+    let mut blasts: Vec<(Vec3, f32)> = Vec::new();
     for &(seq, ev) in &c.events {
         if seq <= *seen_event {
             continue;
@@ -1026,6 +1076,9 @@ fn object_sfx(
         }
         if let CombatEvent::ShotExpired { id, .. } = ev {
             expired.push(id);
+        }
+        if let CombatEvent::BlastStarted { pos, radius, .. } = ev {
+            blasts.push((pos, radius));
         }
     }
     prev_free.retain(|(id, _, _)| !expired.contains(id));
@@ -1039,7 +1092,11 @@ fn object_sfx(
             continue;
         }
         object_boxes.push((prop.min, prop.max));
-        let skill = shot_that_hit(&prev_shots, &alive, prop.min, prop.max);
+        // READ (r7sound): an object worn by a blast is a blast victim, impact code 8 of `FUN_14026cd70`: no s21
+        // and no common/6 / 7 (the same rule as a fighter in a blast, P0-SOUND section 12). Its break sounds stay.
+        let in_blast = !crate::ground_sfx::switched_off("PD_SFX_BLAST_OBJECT_HIT")
+            && blasts.iter().any(|&(at, r)| at.clamp(prop.min, prop.max).distance(at) <= r);
+        let skill = shot_that_hit(&prev_shots, &alive, prop.min, prop.max).filter(|_| !in_blast);
         let vol = if broke { VOL_SFX } else { VOL_OBJECT_HIT };
         if let Some(s) = skill.and_then(|s| lib.skills.get(&s)).and_then(|s| s.impact) {
             cues.push((s, vol));
@@ -1074,12 +1131,13 @@ fn object_sfx(
             if let Some(s) = lib.skills.get(&skill).and_then(|s| s.impact) {
                 cues.push((s, VOL_SFX));
             }
-            // The surface-hit sound of the face it ended on (see `ground_sfx`). `pos` trails the program
-            // position by `lead`, and the step it died on is twice that.
+            // The surface-hit sound of the face it ended on (see `ground_sfx`). A shot ends on the tick the sim
+            // moves it, so the frame before was the tick between two steps, where `pos` is the program
+            // position the fatal step started from; `lead` is half the step before it (about half the fatal one).
             let lead = prev_lead.get(&id).copied().unwrap_or(Vec3::ZERO);
             // READ (P0-SOUND section 13): every step crossing a face is a sweep contact.
             if !crate::ground_sfx::switched_off("PD_SFX_NO_SHOT_SURFACE") {
-                if let Some(sound) = ground.shot_contact(pos + lead, lead * 2.0, world.0.tick) {
+                if let Some(sound) = ground.shot_contact(pos, lead * 2.0, world.0.tick) {
                     cues.push((sound, VOL_SFX));
                 }
             }
@@ -1233,10 +1291,6 @@ mod tests {
         // `cargo test` runs with the CRATE directory as the cwd, not the
         // workspace root, so resolve the cache the way `fx.rs` does.
         let cache = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../cache/sfx/common");
-        // A fresh clone has no converted cache (it is built from the player's own game files): nothing to check then.
-        if !cache.exists() {
-            return;
-        }
         assert!(cache.join(format!("{SFX_FOOTSTEP}.wav")).exists(), "common/{SFX_FOOTSTEP}.wav (the footstep) must be present");
         // And the retired id must NOT be what a pickup plays. Kept as a
         // guard against someone restoring the old constant.

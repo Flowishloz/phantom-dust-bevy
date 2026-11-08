@@ -2,7 +2,7 @@
 // Output stays outside the repo, like the decompile export.
 //
 // Usage (headless, read-only, no re-analysis):
-//   analyzeHeadless.bat %USERPROFILE%\pd-ghidra-proj PDUWP -process PDUWP.exe -noanalysis -readOnly
+//   analyzeHeadless.bat C:\Users\laure\pd-ghidra-proj PDUWP -process PDUWP.exe -noanalysis -readOnly
 //     -scriptPath engine\re -postScript DisasmRange.java <out.txt> <start>:<count> [<start>:<count> ...]
 // <start> is a hex address (14026ea94), <count> the number of instructions to print.
 // If the address is not yet an instruction, it is disassembled first (in memory only; -readOnly).

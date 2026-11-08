@@ -19,20 +19,20 @@ You are one of several parallel lanes rebuilding Phantom Dust (2004) as a Rust +
 8. Only launch the game/viewer in `--screenshot` mode (its window then opens off-screen, behind everything). Never OS-level key/mouse injection. Laurence is working on this PC.
 
 ## Paths
-- Main checkout (read-only for you, except the cache/shots folders noted): `<repo>`
-- Game files (read-only): `..\..\..\game_files\Assets\Data`
-- The converted cache the game runs on: `..\..\cache` (your worktree has no cache; pass this path to the game/viewer). Only the stages and sound lanes write into it, each into their own files.
-- Screenshots: `<repo>\engine\shots\`
+- Main checkout (read-only for you, except the cache/shots folders noted): `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite`
+- Game files (read-only): `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data`
+- The converted cache the game runs on: `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\cache` (your worktree has no cache; pass this path to the game/viewer). Only the stages and sound lanes write into it, each into their own files.
+- Screenshots: `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\shots\`
 - The game's guide/tutorial text: extract it yourself from `game_files/Assets/Data/Menu/mb0*_en.ssb` (and menu/event text from `Menu/*_en.ssb`, `Event/en/*.ssb`, `questdata/en/questdata.qdt`) with Python: `re.finditer(rb'[ -~
 %]{8,}', data)`.
 
 ## Build and run (PowerShell, from your worktree root)
 ```
 . .\engine\env.ps1          # PATH (MinGW, cargo) and cd to engine/
-$env:CARGO_TARGET_DIR = "%USERPROFILE%\.pdtools\target-<lane>"   # your own pre-built copy: target-react / target-move / target-knifefx
+$env:CARGO_TARGET_DIR = "C:\Users\laure\.pdtools\target-<lane>"   # your own pre-built copy: target-react / target-move / target-knifefx
 cargo build -p pd_game      # or -p pd_convert / -p pd_viewer
 cargo test -p pd_game
-& "$env:CARGO_TARGET_DIR\debug\pd_game.exe" "..\..\cache" --demo --screenshot "<repo>\engine\shots\<lane>_x.png" --shot-frame 400
+& "$env:CARGO_TARGET_DIR\debug\pd_game.exe" "C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\cache" --demo --screenshot "C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\shots\<lane>_x.png" --shot-frame 400
 ```
 The target dir is your own pre-built copy (first build ~1 min). `PD_SHOT_COUNT` / `PD_SHOT_EVERY` give a burst of numbered screenshots. `--stage stNN`, `--p1 pcNNa`, `--p2 pcNNa`, `--loadout a,b,c,d`, `--arsenal mixed` exist today. `cargo test -p pd_game` must stay green (308 tests at the start, plus 36 in `pd_formats`, 7 in `pd_convert` and 10 in `pd_viewer`; run `cargo test -p pd_game -p pd_formats -p pd_convert -p pd_viewer`) with no new warnings from your files.
 

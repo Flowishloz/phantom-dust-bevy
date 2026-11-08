@@ -33,8 +33,8 @@ sys.path.insert(0, HERE)
 
 import skill_audit_rules as R  # noqa: E402
 
-DEFAULT_SUMMARY = os.path.expandvars(r"%USERPROFILE%\.pdtools\moverec\full_trace_summary.csv")
-DEFAULT_SKILLS = r"..\..\cache\skills.json"
+DEFAULT_SUMMARY = r"C:\Users\laure\.pdtools\moverec\full_trace_summary.csv"
+DEFAULT_SKILLS = r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\cache\skills.json"
 
 
 def f(v, default=None):

@@ -32,31 +32,11 @@ engine/userdata/
 Reference Images/
 __pycache__/
 engine/play/
-# (Valve's steam_api64.dll is NOT redistributed here; see LEGAL.md. The steamworks-sys crate ships one and
-# build.rs copies it next to the built exe.)
-steam_api64.dll
-steam_appid.txt
+# (Steam's redistributable DLL + App ID live in engine/vendor/steam/, tracked; build.rs copies them
+# next to the built exe. Laurence's engine/play copy is never tracked.)
 
 # In-game bug reports (F8): screenshots of game assets, never commit
 engine/bug_reports/
 # regen_cache.sh output before it is swapped in for engine/cache
 engine/cache.new/
 engine/cache.old/
-
-# Safety net: formats of the original game and anything decoded from it never go in this repo.
-*.alr
-*.ala
-*.stx
-*.ssb
-*.cad
-*.epa
-*.eft
-*.pdcl
-*.pdm
-*.dds
-*.cso
-*.mp4
-*.iso
-*.xiso
-*.bin
-!engine/vendor/**/*.bin

@@ -81,6 +81,9 @@ pub const HEAVY_LAND_TIME: f32 = 29.0 / 30.0;
 pub const FALL_RESPAWN_BELOW: f32 = 150.0;
 /// Ticks a grounded player may cross a gap in the floor before falling.
 pub const COYOTE_TICKS: u8 = 6;
+/// A grounded body with no floor under it keeps the program's grounded flag until it is this far below its last
+/// floor contact (`FUN_140254590`: `+0x12e78 - y > 5.0`, `0x1402f7f18`). Only the melee cast's fall cut reads it.
+pub const GROUND_DROP: f32 = 5.0;
 /// Right-stick camera turn speed when not locked on (radians/s, full tilt).
 pub const CAM_TURN_SPEED: f32 = 2.6;
 /// Locked-on camera yaw slew (lockon lane O4, 2026-09-29): the program turns
@@ -422,6 +425,10 @@ pub struct Player {
     prev_lock: bool,
     prev_switch: bool,
     coyote: u8,
+    /// Height of the last floor contact (the program's `+0x12e78`, written by `FUN_140254590` whenever the mover
+    /// finds the floor). Read only by the combat side (a melee cast's fall cut); our movement keeps its own gap
+    /// rule (`COYOTE_TICKS`), which the movement-only golden pins.
+    pub(crate) ground_y: f32,
     /// Highest y reached since leaving the ground, for the fall-height
     /// landing rule (PROGRAM-RE.md "Landing by fall height").
     air_peak_y: f32,
@@ -483,19 +490,54 @@ pub struct Player {
     /// step. Not hashed (the position carries the effect).
     scripted_dash: u16,
     scripted_dash_speed: f32,
+    /// BODY1 in the fighter's own frame (x right, y up, z forward at yaw 0; `combat::local_to_world`) for the
+    /// clip and frame the fighter's pose is at (`Combat::update_pose`, end of `Match::step`): what
+    /// `body_point` / `target_point` read. `None` = an idle / walking / running / pivoting / jumping /
+    /// dodging body, or no BODY1 table loaded: the measured idle point (and, reacting, the position) as
+    /// before. Derived from hashed state each tick (not hashed).
+    pub(crate) pose_point: Option<Vec3>,
+    /// In the melee state (12) on the ground (`Combat::melee_on_ground`), set by `Match::step` each tick
+    /// like `casting`: off a ledge the body falls under gravity at once while it keeps its grounded flag
+    /// down to `GROUND_DROP` (`FUN_140254590`; state 12 is not one the program holds at a ledge), instead
+    /// of the `COYOTE_TICKS` hold that ordinary movement keeps. Not hashed (derived each tick).
+    melee_ledge: bool,
 }
 
 impl Player {
     /// The point the program's object tests, lock-on bearing, melee dash and knock-back direction read
     /// as this fighter's place (entity `+0x60` / `+0x68`, the world x / z of its BODY1 bone, not its
-    /// position `+0x12e40`): the position moved by `Body::target_offset` of the facing. Valid for the
-    /// standing / casting pose (the measured idle offset); a fighter in a reaction (hit, knocked, down)
-    /// has its bone somewhere the data has not measured, so it keeps its own position.
+    /// position `+0x12e40`). In a cast, a reaction (hit, knocked, lying, getting up) or a landing: BODY1
+    /// of the clip and frame the pose is at (`pose_point`, READ `FUN_1402513a0` after the skeleton
+    /// `FUN_140298020`; table `pd_convert shotpoints` -> `chars/<id>.body1.json`). Standing, walking,
+    /// running, pivoting, jumping or dodging (or no table): the position moved by `Body::target_offset`
+    /// of the facing (the MEASURED idle offset); a reacting fighter with no table keeps its position.
     pub fn target_point(&self) -> Vec3 {
+        if let Some(p) = self.pose_point {
+            let w = crate::combat::local_to_world(self.pos, self.yaw, p);
+            return Vec3::new(w.x, self.pos.y, w.z);
+        }
         if self.reacting {
             self.pos
         } else {
             self.pos + self.body.target_offset(self.yaw)
+        }
+    }
+
+    /// The whole collider point in 3-D (entity `+0x60..+0x68` = BODY1's world x, y and z, `FUN_1402513a0`): what
+    /// every hit test reads as the body's centre (`FUN_14026c1c0` shots, `FUN_14026c340` / `FUN_14026c730`
+    /// blows, `FUN_14026c5b0` spheres, `FUN_14026dcb0` guards) and what homing and aim points steer at
+    /// (`FUN_140264710`, `FUN_14026e410`). With a pose (`pose_point`, see `target_point`): BODY1 of the
+    /// current clip and frame, x, y and z. Otherwise height = `Body::point_height` (MEASURED, the idle
+    /// pose) over the measured idle point; a reacting fighter with no BODY1 table keeps its position and
+    /// the charaset centre height 9.
+    pub fn body_point(&self) -> Vec3 {
+        if let Some(p) = self.pose_point {
+            return crate::combat::local_to_world(self.pos, self.yaw, p);
+        }
+        if self.reacting {
+            crate::moves::body_centre(self.pos)
+        } else {
+            self.target_point() + Vec3::Y * self.body.point_height
         }
     }
 
@@ -531,6 +573,7 @@ impl Player {
             prev_lock: false,
             prev_switch: false,
             coyote: 0,
+            ground_y: spawn.y,
             air_peak_y: spawn.y,
             hold_air: false,
             casting: false,
@@ -545,6 +588,8 @@ impl Player {
             float_hold: false,
             scripted_dash: 0,
             scripted_dash_speed: 0.0,
+            pose_point: None,
+            melee_ledge: false,
         }
     }
 
@@ -795,6 +840,7 @@ impl Match {
             p.hold_air = p.casting && f.air_cast;
             p.launched = f.flying && matches!(f.action, Action::Knocked | Action::Down);
             p.reacting = matches!(f.action, Action::Hit | Action::Knocked | Action::Down);
+            p.melee_ledge = self.combat.melee_on_ground(i);
             // A hit reaction ends the Dash skill's state 3 (the reaction is its own state).
             if p.reacting {
                 p.scripted_dash = 0;
@@ -863,30 +909,25 @@ impl Match {
                 Action::Down => Motion::Down,
             };
         }
+        // The collider point the next tick's tests read: BODY1 of each fighter's clip and frame (`combat/pose.rs`).
+        for i in roster.slots() {
+            self.combat.update_pose(i, &mut self.players[i]);
+        }
         // Bodies don't overlap (`FUN_140250780`, `body.rs`): a pair whose horizontal gap is under
         // `contact_a / 2 + contact_b / 2` (10 u for two playable fighters) while the two `height / 2`
         // centres are closer than `(h_a + h_b) / 2` is pushed apart along the line between them, half
         // of the overlap each. Every pair, in slot order. The program pushes once per program tick,
         // after the state handlers have moved the bodies, so a fighter half way through a dash's
-        // program step (`Combat::mid_dash_step`) is pushed after the second half.
+        // program step (`Combat::mid_dash_step`) is pushed after the second half. A melee caster is
+        // also pushed inside its own tick before its blow is tested (`Combat::lunge`, round 11: the
+        // program's push is the first call of each fighter's physics `FUN_140254590`, before its objects).
         let slots: Vec<usize> = roster.slots().collect();
         for (k, &ia) in slots.iter().enumerate() {
             for &ib in &slots[k + 1..] {
                 if self.combat.mid_dash_step(ia) || self.combat.mid_dash_step(ib) {
                     continue;
                 }
-                let (head, tail) = self.players.split_at_mut(ib);
-                let (a, b) = (&mut head[ia], &mut tail[0]);
-                let d = Vec3::new(b.pos.x - a.pos.x, 0.0, b.pos.z - a.pos.z);
-                let min = a.body.radius() + b.body.radius();
-                let dy = (b.pos.y + b.body.height * 0.5) - (a.pos.y + a.body.height * 0.5);
-                if dy.abs() < (a.body.height + b.body.height) * 0.5 && d.length_squared() < min * min {
-                    let len = d.length();
-                    let n = if len > 1e-4 { d / len } else { Vec3::X };
-                    let push = (min - len) * 0.5;
-                    a.pos = col.push_out_of_walls(a.pos - n * push, a.body.wall_radius(), STEP_HEIGHT + 1.0, BODY_HEIGHT);
-                    b.pos = col.push_out_of_walls(b.pos + n * push, b.body.wall_radius(), STEP_HEIGHT + 1.0, BODY_HEIGHT);
-                }
+                push_apart(&mut self.players, ia, ib, col);
             }
         }
         // Prop Hunt: knives paid for, catches, frozen hiders held, the round clock; a new round puts everyone back.
@@ -982,6 +1023,31 @@ fn lock_cam_yaw_rate() -> f32 {
             .map(|r| r.to_radians())
             .unwrap_or(LOCK_CAM_YAW_RATE_DEG_PER_S.to_radians() * DT)
     })
+}
+
+/// The push-apart of two bodies (`FUN_140250780`, `body.rs`): a pair whose horizontal gap is under
+/// `contact_a / 2 + contact_b / 2` while the two `height / 2` centres are closer than `(h_a + h_b) / 2` is
+/// pushed apart along the line between their positions, half of the overlap each (a match: the other
+/// fighter's `+0x34` is set). Used at the end of `Match::step` for every pair and, for a melee caster, inside
+/// its own tick before its blow is tested (`Combat::lunge`; the program's push runs in each fighter's
+/// physics `FUN_140254590`, before that fighter's objects).
+pub(crate) fn push_apart(players: &mut [Player], ia: usize, ib: usize, col: &Collision) {
+    if ia == ib || ia >= players.len() || ib >= players.len() {
+        return;
+    }
+    let (lo, hi) = (ia.min(ib), ia.max(ib));
+    let (head, tail) = players.split_at_mut(hi);
+    let (a, b) = (&mut head[lo], &mut tail[0]);
+    let d = Vec3::new(b.pos.x - a.pos.x, 0.0, b.pos.z - a.pos.z);
+    let min = a.body.radius() + b.body.radius();
+    let dy = (b.pos.y + b.body.height * 0.5) - (a.pos.y + a.body.height * 0.5);
+    if dy.abs() < (a.body.height + b.body.height) * 0.5 && d.length_squared() < min * min {
+        let len = d.length();
+        let n = if len > 1e-4 { d / len } else { Vec3::X };
+        let push = (min - len) * 0.5;
+        a.pos = col.push_out_of_walls(a.pos - n * push, a.body.wall_radius(), STEP_HEIGHT + 1.0, BODY_HEIGHT);
+        b.pos = col.push_out_of_walls(b.pos + n * push, b.body.wall_radius(), STEP_HEIGHT + 1.0, BODY_HEIGHT);
+    }
 }
 
 /// `speed`: movement speed factor (status and environment skills).
@@ -1231,13 +1297,23 @@ fn step_player_at(p: &mut Player, input: Input, opponent: Vec3, col: &Collision,
                 p.vel.y = 0.0;
                 p.grounded = true;
                 p.coyote = 0;
+                p.ground_y = g;
             }
             Some(g) if was_grounded && p.pos.y - g <= STEP_HEIGHT && p.vel.y <= 0.0 => {
                 // Walking down a small step: stick to the floor.
                 p.pos.y = g;
                 p.vel.y = 0.0;
                 p.coyote = 0;
+                p.ground_y = g;
             }
+            // The melee state off a ledge (READ `FUN_140254590`): every tick `vy -= g`, `y += vy`, and with no
+            // floor the grounded flag stays until the body is `GROUND_DROP` below its last floor (`+0x12e78`);
+            // state 12 is not in the ledge-hold mask 0x16002440. LIVE `182_Swift_Kick` rec 63-71 / `189_Swift_Punch`
+            // rec 61-73: the caster sinks 0.12, 0.24, 0.36 ... u a program tick from the first floorless tick.
+            _ if was_grounded && p.melee_ledge && p.ground_y - p.pos.y <= GROUND_DROP => {
+                p.vel.y = (p.vel.y - GRAVITY * DT).max(-FALL_SPEED_CAP);
+            }
+            _ if was_grounded && p.melee_ledge => p.grounded = false,
             // Tiny gaps between floor triangles (or the first moment off a
             // ledge): stay grounded for a few ticks instead of flickering into
             // a fall.
@@ -1504,6 +1580,37 @@ mod tests {
         let mut same = duel(Vec3::ZERO, Vec3::ZERO, [Body::DEFAULT; 2]);
         same.step([Input::default(); 2], &mut col);
         assert!((same.players[1].pos.x - same.players[0].pos.x - 10.0).abs() < 1e-3 && same.players[0].pos.z == same.players[1].pos.z);
+    }
+
+    /// READ `FUN_140254590`: a body in the melee state (12) that has stepped off a ledge falls under gravity
+    /// from the first floorless tick and keeps its grounded flag until it is `GROUND_DROP` below its last
+    /// floor; ordinary movement keeps its `COYOTE_TICKS` hold (the movement-only golden pins that).
+    #[test]
+    fn a_melee_body_off_a_ledge_sinks_at_once_and_is_airborne_five_units_down() {
+        // A deck ending at x = 0, nothing under it.
+        let s = 100.0;
+        let col = Collision::new(vec![
+            [Vec3::new(-s, 0.0, -s), Vec3::new(0.0, 0.0, -s), Vec3::new(0.0, 0.0, s)],
+            [Vec3::new(-s, 0.0, -s), Vec3::new(0.0, 0.0, s), Vec3::new(-s, 0.0, s)],
+        ]);
+        let far = Vec3::new(0.0, 0.0, 5000.0);
+        for melee in [false, true] {
+            let mut p = Player::new(Vec3::new(1.0, 0.0, 0.0), 0.0);
+            p.melee_ledge = melee;
+            let mut ys = Vec::new();
+            for _ in 0..30 {
+                step_player(&mut p, Input::default(), far, &col);
+                p.melee_ledge = melee;
+                ys.push((p.pos.y, p.grounded));
+            }
+            if melee {
+                assert!(ys[3].0 < -0.01 && ys[3].1, "sinking and still grounded: {:?}", &ys[..6]);
+                let k = ys.iter().position(|&(_, g)| !g).unwrap();
+                assert!(ys[k].0 < -GROUND_DROP && ys[k - 1].0 >= -GROUND_DROP - 1.0, "{:?}", &ys[k - 1..=k]);
+            } else {
+                assert!(ys[..COYOTE_TICKS as usize].iter().all(|&(y, _)| y == 0.0), "the coyote hold: {:?}", &ys[..8]);
+            }
+        }
     }
 
     /// `FUN_140255020` against the stage: the body keeps `contact / 2` = 5.0 u from a wall (it was 4.5).

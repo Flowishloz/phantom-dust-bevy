@@ -12,7 +12,7 @@ A fan runtime for **Phantom Dust** (Microsoft, 2004; free Windows 10 re-release 
 
 ## Hard rules
 
-1. **Never commit, upload, or publish game data (this repo is public).** `game_files/`, `engine/cache/`, and anything decoded from them (PNG, glTF, WAV, screenshots containing assets are fine to show Laurence locally) stay on this machine. Only our source code is ours.
+1. **Never commit, upload, or publish game data.** `game_files/`, `engine/cache/`, and anything decoded from them (PNG, glTF, WAV, screenshots containing assets are fine to show Laurence locally) stay on this machine. Only our source code is ours.
 2. **Never copy code from Esper-RE** (`tools/Esper-RE`, GPLv3). Read it as reference; reimplement from the documented layouts. Copying would force the whole project to GPL.
 3. **The simulation is deterministic.** `engine/crates/pd_game/src/sim.rs` (with `combat.rs`) takes quantised inputs and produces state; nothing in it may read time, unseeded randomness, the renderer, or Bevy types. Rendering reads sim state, never writes it. This is what online play will stand on.
 4. **Verify visual work visually.** A change to rendering, animation, or camera is not done until a screenshot has been looked at. When correctness is ambiguous (e.g. rotation conventions), render labelled variants A–F and let Laurence pick. See `engine/docs/VERIFY.md`.
@@ -20,43 +20,57 @@ A fan runtime for **Phantom Dust** (Microsoft, 2004; free Windows 10 re-release 
 
 ## Version control
 
-- Public GitHub repo `Flowishloz/phantom-dust-bevy` (branch `main`). It holds source code and our own documentation only.
-- `.gitignore` excludes game data, cache, screenshots, build output and third-party tools. Before any commit, check `git status` for anything derived from the game (`.alr .stx .png .glb .wav .pdcl`, dumper logs); none of it may be committed. See `LEGAL.md`.
-- Commit when a unit of work is verified.
+- Local git repo at the project root; remote `origin` = private GitHub repo `Flowishloz/phantom-dust-rebuild` (branch `main`).
+- `.gitignore` excludes game data, cache, screenshots, build output and third-party tools. Before any commit, check `git status` for anything derived from the game (`.alr .stx .png .glb .wav .pdcl`, dumper logs); none of it may be committed.
+- Commit when a unit of work is verified. Push only when Laurence asks; never make the repo public.
 
 ## Layout
 
 ```
-(repo root)
+Phantom Dust Rewrite/    (C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite; was "Phantom dust" until 2026-10-01)
   AGENTS.md              this file
-  README.md  LEGAL.md  LICENSE-MIT  LICENSE-APACHE   what this is, what is and is not shared, licences
-  PLAY.bat               a numbered launcher menu (play, quick test match, control log, ...);
-                         it runs engine\play\pd_game.exe, your own build copy
-  game_files/            YOUR copy of the game's data (you provide it). Never commit.
-  tools/bats/            the helper launchers PLAY.bat calls (each also works on its own)
-  engine/                Rust workspace - all our code
+  CLAUDE.md              points here
+  PLAY.bat               Laurence's ONE launcher: a numbered menu (play, quick test match,
+                         control log, original game + recorder, record original moves);
+                         it runs his own copy engine\play\pd_game.exe
+  TODO-LAURENCE.md       things only Laurence can do / decide
+  ONLINE-MP-HANDOFF.md   Brett's online branch handoff (merged into main 2026-10-03; two-PC test still open)
+  game_files/            the unlocked game (3,717 files, no .mp4). Read-only. Never commit.
+  docs/research/         early research notes (DECODING_RESEARCH.md, reports/, research_notes/)
+  lanes/                 git worktrees of running orchestration lanes (ignored)
+  _archive/old-lanes/    finished lane worktrees, parked untouched (ignored; safe to delete)
+  Reference Images/      Laurence's screenshots of the original (ignored)
+  tools/
+    bats/                the helper launchers PLAY.bat calls (each also works on its own)
+    Esper-RE/            community research (GPLv3, reference only)
+    pd_loader_core/      community mod loader (reference only)
+    disasm/disasm.exe    D3D shader disassembler (wraps d3dcompiler_47.dll)
+  engine/                Rust workspace — all our code
     crates/pd_formats/   file-format library: ALR, animation, textures, STX, collision, glTF export
     crates/pd_convert/   CLI: game files -> cache (+ research/probe subcommands)
     crates/pd_viewer/    asset viewer: stage + character + anim, screenshots
     crates/pd_game/      split-screen game (sim.rs + combat.rs + moves/ = rules; cpu/ = computer opponent;
                          frontend/ = menus; net/ + online_match.rs = online play; main.rs, hud.rs, fx.rs,
                          effects.rs = Bevy glue)
+    vendor/steam/        steam_api64.dll + steam_appid.txt (480) for online play; pd_game's build.rs copies
+                         them next to the built exe; they must also sit next to engine\play\pd_game.exe
     vendor/bevy_gilrs/   patched bevy_gilrs (weak-motor rumble fix; `[patch.crates-io]` in engine/Cargo.toml)
     re/                  Python tools: film comparison, move recorder, live trace, skill audits (README-PC-TOOLS.md)
-    cache/               converted assets (generated on your machine, never commit)
+    cache/               converted assets (generated, never commit)
     shots/               screenshots (generated)
     env.ps1              dot-source first: `. .\env.ps1` (PATH + cd)
     shot.ps1             one-line viewer screenshot helper
-    montage.ps1          labelled grid of screenshots (A-F sheets)
-    docs/                per-area docs - start at docs/INDEX.md
-  docs/WHAT-WE-FOUND.md  plain-English summary of what the project has found out
+    montage.ps1          labelled grid of screenshots (A–F sheets)
+    docs/                per-area docs — start at docs/INDEX.md
+  .claude/skills/        project skills for agents: pd-build-run, pd-asset-pipeline, pd-visual-verify,
+                         pd-reverse-engineer, pd-film-compare, pd-live-original, pd-lane-wave, pd-laurence-bug
 ```
 
 ## Toolchain (Windows, no Visual Studio)
 
 - Rust stable, **GNU target** (`x86_64-pc-windows-gnu`), installed via rustup.
-- A portable MinGW-w64 (linker + `dlltool`) at `%USERPROFILE%\.pdtools\mingw64`, or wherever `$env:PD_MINGW` points. It lives outside the project because MinGW's linker breaks on spaces in the project path. `engine/.cargo/config.toml` just names `gcc` and `dlltool`; `env.ps1` puts them on PATH.
-- Every shell needs: `. .\engine\env.ps1` (puts MinGW + cargo on PATH, cd's to `engine/`).
+- Portable MinGW at `C:\Users\laure\.pdtools\mingw64` (linker + `dlltool`). It lives outside the project because MinGW's linker breaks on spaces in the project path. Wired up in `engine/.cargo/config.toml`.
+- Every shell needs: `. "C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\env.ps1"` (puts MinGW + cargo on PATH, cd's to `engine/`).
 - Dev profile keeps debug info minimal: full debug info makes the Bevy exe exceed Windows' 2 GB executable limit ("not a valid Win32 application").
 - `glam` must match Bevy's version (currently `0.32`), or `Vec3` types won't unify.
 - Bevy is **0.19**: scenes spawn with `WorldAssetRoot(...)` (not `SceneRoot`), events are `MessageReader/MessageWriter`.

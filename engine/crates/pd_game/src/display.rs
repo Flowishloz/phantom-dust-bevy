@@ -532,15 +532,17 @@ pub fn plan(d: &DisplaySettings, monitor: Option<&MonitorInfo>, windowed_size: O
         DisplayMode::Exclusive => {
             let pick = match d.resolution {
                 Resolution::Native => VideoModeSelection::Current,
-                Resolution::Fixed(w, h) => monitor
-                    .and_then(|m| {
-                        m.modes
-                            .iter()
-                            .filter(|vm| vm.physical_size == UVec2::new(w, h))
-                            .max_by_key(|vm| (vm.refresh_rate_millihertz, vm.bit_depth))
-                            .copied()
-                    })
-                    .map_or(VideoModeSelection::Current, VideoModeSelection::Specific),
+                Resolution::Fixed(w, h) => match monitor {
+                    Some(m) => match m.modes.iter().filter(|vm| vm.physical_size == UVec2::new(w, h)).max_by_key(|vm| (vm.refresh_rate_millihertz, vm.bit_depth)).copied() {
+                        Some(vm) => VideoModeSelection::Specific(vm),
+                        // A saved exclusive size this screen has no video mode for (a 4K choice made on the TV, opened with
+                        // only the laptop panel connected, 2026-10-10): switching a running window to the current mode
+                        // froze the game. A borderless window on this screen is the safe stand-in.
+                        None if !m.modes.is_empty() => return WindowPlan { mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current), size: None },
+                        None => VideoModeSelection::Current,
+                    },
+                    None => VideoModeSelection::Current,
+                },
             };
             WindowPlan { mode: WindowMode::Fullscreen(MonitorSelection::Current, pick), size: None }
         }
@@ -964,11 +966,23 @@ mod tests {
             WindowMode::Fullscreen(_, VideoModeSelection::Specific(m)) => assert_eq!((m.physical_size, m.refresh_rate_millihertz), (UVec2::new(1920, 1080), 120_000)),
             other => panic!("{other:?}"),
         }
-        // Exclusive native, or a size the monitor lacks: the current mode.
+        // Exclusive native: the current mode.
         d.resolution = Resolution::Native;
         assert_eq!(plan(&d, Some(&tv), None).mode, WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current));
+        // A size the screen has no video mode for (a saved 4K choice opened on the laptop panel alone froze the game
+        // when applied as the current mode): borderless on that screen instead.
+        let borderless = WindowMode::BorderlessFullscreen(MonitorSelection::Current);
         d.resolution = Resolution::Fixed(1600, 900);
-        assert_eq!(plan(&d, Some(&tv), None).mode, WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current));
+        assert_eq!(plan(&d, Some(&tv), None).mode, borderless);
+        let laptop = MonitorInfo { size: UVec2::new(2880, 1800), scale: 2.0, modes: vec![vm(2880, 1800, 120, 32), vm(1920, 1080, 120, 32)] };
+        d.resolution = Resolution::Fixed(3840, 2160);
+        assert_eq!(plan(&d, Some(&laptop), None).mode, borderless, "a saved 4K choice on a screen with no 4K mode");
+        // The same choice on the TV is the real 4K mode, as before.
+        assert!(matches!(plan(&d, Some(&tv), None).mode, WindowMode::Fullscreen(_, VideoModeSelection::Specific(_))));
+        // No monitor known yet, or none listing modes: nothing to judge by, keep the old behaviour.
+        assert_eq!(plan(&d, None, None).mode, WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current));
+        let bare = MonitorInfo { size: UVec2::new(2880, 1800), scale: 2.0, modes: vec![] };
+        assert_eq!(plan(&d, Some(&bare), None).mode, WindowMode::Fullscreen(MonitorSelection::Current, VideoModeSelection::Current));
     }
 
     /// The 4K TV Laurence plays on, in the ways Windows can present it: the desktop at 4K or left at 1080p, and any scaling.

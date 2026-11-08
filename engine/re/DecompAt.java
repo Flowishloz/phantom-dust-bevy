@@ -3,7 +3,7 @@
 // Our own tool. Output is decompiled game code: keep it outside the repo.
 //
 // Usage (headless, -readOnly so the project is not changed):
-//   analyzeHeadless.bat %USERPROFILE%\pd-ghidra-proj PDUWP -process PDUWP.exe -noanalysis -readOnly
+//   analyzeHeadless.bat C:\Users\laure\pd-ghidra-proj PDUWP -process PDUWP.exe -noanalysis -readOnly
 //     -scriptPath engine\re -postScript DecompAt.java <out.txt> <hexaddr> [<hexaddr> ...]
 //@category PD
 import ghidra.app.script.GhidraScript;

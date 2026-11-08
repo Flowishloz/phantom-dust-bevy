@@ -11,7 +11,7 @@ use pd_formats::ssb_vm::{Memory, MsvcRand, Natives, RunStatus, Vm};
 use std::path::PathBuf;
 
 fn com_dir() -> PathBuf {
-    std::env::var_os("PD_GAME_FILES_COM").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"..\..\..\game_files\Assets\Data\com"))
+    std::env::var_os("PD_GAME_FILES_COM").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\com"))
 }
 
 /// Toy skills: (ai type s42, capsule type s9). Skill ids 100.. are made up for the stub.

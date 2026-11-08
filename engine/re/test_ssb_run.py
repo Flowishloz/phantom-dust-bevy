@@ -9,7 +9,7 @@ import ssb_dis as S
 import ssb_run as R
 from test_ssb_dis import build, native, w
 
-REAL = r"../../../game_files/Assets/Data/com/ai/eneprog006.ssb"
+REAL = r"C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/Assets/Data/com/ai/eneprog006.ssb"
 
 
 class Rec(R.Host):

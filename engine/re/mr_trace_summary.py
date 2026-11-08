@@ -161,8 +161,8 @@ def write_summary(takes_dir, out_csv, rows_by_id=None):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("takes_dir")
-    ap.add_argument("out_csv", nargs="?", default=os.path.expandvars(r"%USERPROFILE%\.pdtools\moverec\full_trace_summary.csv"))
-    ap.add_argument("--list", default=os.path.expandvars(r"%USERPROFILE%\.pdtools\moverec\all_skills.csv"))
+    ap.add_argument("out_csv", nargs="?", default=r"C:\Users\laure\.pdtools\moverec\full_trace_summary.csv")
+    ap.add_argument("--list", default=r"C:\Users\laure\.pdtools\moverec\all_skills.csv")
     a = ap.parse_args(argv)
     rows_by_id = {}
     if os.path.exists(a.list):

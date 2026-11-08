@@ -77,7 +77,7 @@ def find_game_decks(explicit=None):
         cands.append(Path(explicit))
     if os.environ.get("PD_GAME_FILES"):
         cands.append(Path(os.environ["PD_GAME_FILES"]))
-    cands += [REPO / "game_files", REPO.parent / "Phantom Dust Rewrite" / "game_files", Path(r"..\..\..\game_files")]
+    cands += [REPO / "game_files", REPO.parent / "Phantom Dust Rewrite" / "game_files", Path(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files")]
     for c in cands:
         d = c / "Assets" / "Data" / "com" / "deck"
         if d.is_dir():
@@ -281,7 +281,7 @@ def find_gsdata(explicit=None):
         cands.append(Path(explicit))
     if os.environ.get("PD_GAME_FILES"):
         cands.append(Path(os.environ["PD_GAME_FILES"]))
-    cands += [REPO / "game_files", REPO.parent / "Phantom Dust Rewrite" / "game_files", Path("../../../game_files")]
+    cands += [REPO / "game_files", REPO.parent / "Phantom Dust Rewrite" / "game_files", Path("C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files")]
     for c in cands:
         f = c / "Assets" / "Data" / "gstorage" / "gsdata_en.dat"
         if f.is_file():
@@ -301,7 +301,7 @@ def load_program(cache, game_files=None):
 def run_probe(out, ids=None, target_dir=None):
     """Runs the Rust probe (a test of pd_game) and returns the JSON path."""
     env = dict(os.environ)
-    mingw = os.path.expandvars(r"%USERPROFILE%\.pdtools\mingw64\bin")
+    mingw = r"C:\Users\laure\.pdtools\mingw64\bin"
     cargo = str(Path.home() / ".cargo" / "bin")
     env["PATH"] = os.pathsep.join([mingw, cargo, env.get("PATH", "")])
     env["PD_SKILL_AUDIT_OUT"] = str(out)

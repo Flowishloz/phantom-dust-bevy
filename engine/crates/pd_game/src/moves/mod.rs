@@ -241,7 +241,8 @@ pub struct Launch<'a> {
     /// The fire matrix's pitch, program sense (positive = down; `Frame::fire`): READ, `FUN_140258180` stores
     /// `atan2(caster y + centre height - target point y, horizontal distance)` at the press of an aimed attack
     /// with a locked target (0 otherwise) and `FUN_1402514c0` tips the fire matrix by it. Used by the families
-    /// whose init takes the fire matrix rows as the heading (arc `FUN_1402666b0`, multi-laser `FUN_14026af40`).
+    /// whose init takes the fire matrix rows as the heading (arc `FUN_1402666b0`, multi-laser `FUN_14026af40`,
+    /// shell `FUN_140264570`).
     pub pitch: f32,
     /// The locked target's body centre; `None` = nothing locked.
     pub target: Option<Vec3>,
@@ -582,7 +583,7 @@ impl Shot {
                 f.step(&mut self.pos, target, h, away);
                 true
             }
-            Flight::Crawl(f) => f.step(&mut self.pos, age, target, h, away, col),
+            Flight::Crawl(f) => f.step(&mut self.pos, self.radius, age, target, h, away, col),
             Flight::Arc(f) => {
                 f.step(&mut self.pos, target, h, away);
                 true

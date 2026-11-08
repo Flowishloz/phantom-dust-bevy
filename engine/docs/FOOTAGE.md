@@ -2,7 +2,7 @@
 
 Laurence recorded the installed original (Xbox/PC re-release) to check the numbers the program-reading pilot pulled out of `PDUWP.exe` (see `PROGRAM-RE.md`). This doc measures that footage and gives a verdict per claim: **confirmed** / **refuted** / **can't tell**, with the evidence.
 
-Rules followed: footage is read-only (never moved/modified), all working files (extracted frames, audio, contact sheets) live in `%USERPROFILE%\.pdtools\footage\` outside git. Only 2–4 contact sheets were kept, copied into `engine/shots/` with prefix `ft_` (gitignored).
+Rules followed: footage is read-only (never moved/modified), all working files (extracted frames, audio, contact sheets) live in `C:\Users\laure\.pdtools\footage\` outside git. Only 2–4 contact sheets were kept, copied into `engine/shots/` with prefix `ft_` (gitignored).
 
 ## Method actually used
 
@@ -111,7 +111,7 @@ The new "Opponent POV" clip answers "does a hit happen on roughly the right time
 
 # Round 2 — Jump, Lock-On, and a cleaner Psycho Knife take, 2026-09-27
 
-Laurence recorded a second batch in `%USERPROFILE%\Pictures\Phantom Dust - Moves 2\`: `Jump.mp4`, `Lock-On Animation.mp4`, `Psycho Knife - Not locked-on And Locked-on.mp4`. Same method, same rules (working files in `%USERPROFILE%\.pdtools\footage\`, contact sheets prefixed `ft2_` in `engine/shots/`, nothing committed, no other docs touched).
+Laurence recorded a second batch in `C:\Users\laure\Pictures\Phantom Dust - Moves 2\`: `Jump.mp4`, `Lock-On Animation.mp4`, `Psycho Knife - Not locked-on And Locked-on.mp4`. Same method, same rules (working files in `C:\Users\laure\.pdtools\footage\`, contact sheets prefixed `ft2_` in `engine/shots/`, nothing committed, no other docs touched).
 
 **Format note:** all three clips are split-screen (2878×772 = two 1439×772 halves side by side). Per Laurence: for Jump and Lock-On, only the **left half** matters (cropped before extracting frames); for the Psycho Knife clip, **both halves matter and share one clock** — left = the knife user's own view (wide, both fighters visible), right = the target's view (close-up on the knife user closing in). All three are clean, constant 30.000 fps captures (verified the same way as Round 1: every frame delta is exactly 0.0333 s except one short first-frame artefact) — no dropped or duplicated frames.
 

@@ -7,7 +7,7 @@
 - Use the game's own lock-on art from the HUD atlas if it exists (see `engine/docs/HUD.md`; current piece is `LOCK_RING` in `hud.rs`). Guesses must be named constants marked "unconfirmed".
 - Reference: Laurence's footage frames via `engine/docs/FOOTAGE.md` and `engine/docs/VFX-AUDIT.md` item 5; sheets in `engine/shots/vfxaudit/`.
 
-**Laurence's lock-on clip (2026-09-28):** `%USERPROFILE%\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4` (read-only; 30 fps, two locks + unlocks). Frame-by-frame close-up: `engine/shots/lockon/marker_frames.png` (one tile per frame, read left→right). What it shows, per lock:
+**Laurence's lock-on clip (2026-09-28):** `C:\Users\laure\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4` (read-only; 30 fps, two locks + unlocks). Frame-by-frame close-up: `engine/shots/lockon/marker_frames.png` (one tile per frame, read left→right). What it shows, per lock:
 - f0: nothing.
 - f1–f5 (~0.17 s): a small green three-spoke "Y" icon appears on the target.
 - f6–f7: three short green arc segments fly inward from a wide circle (~3× final size), converging on the icon.

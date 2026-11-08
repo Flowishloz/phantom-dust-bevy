@@ -16,7 +16,7 @@ Usage (run from anywhere):
                         [rsp+0x28] (qword) / d[rsp+0x28] (dword); a trailing * marks a summary key.
                         With no ARGS, NAME picks a preset (sound, capture, erase) or rcx,rdx,r8,r9.
 --pid N / auto-finds PDUWP.exe     --seconds N (else until Ctrl+C / console closed)
---out FILE.csv  (default %USERPROFILE%/.pdtools/trace/sound_<timestamp>.csv, outside the repo)
+--out FILE.csv  (default C:/Users/laure/.pdtools/trace/sound_<timestamp>.csv, outside the repo)
 --summary       count per (bp, key args) at exit      --quiet  do not echo hits to the console
 
 Safety: DebugSetProcessKillOnExit(False) straight after attaching, so ending never kills the
@@ -35,7 +35,7 @@ import threading
 import time
 
 GHIDRA_BASE = 0x140000000
-DEFAULT_OUT_DIR = os.path.expandvars(r"%USERPROFILE%\.pdtools\trace")
+DEFAULT_OUT_DIR = r"C:\Users\laure\.pdtools\trace"
 
 # --------------------------------------------------------------------------- pure parts
 

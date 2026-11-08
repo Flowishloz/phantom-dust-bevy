@@ -18,7 +18,7 @@ import sys
 import numpy as np
 from PIL import Image, ImageDraw
 
-FFMPEG = os.path.expandvars(r"%USERPROFILE%\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+FFMPEG = (r"C:\Users\laure\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
           r"\ffmpeg-8.1.2-full_build\bin\ffmpeg.exe")
 TICK = 1 / 30.0
 

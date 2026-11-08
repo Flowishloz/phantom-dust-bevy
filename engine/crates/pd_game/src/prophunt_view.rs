@@ -19,6 +19,7 @@ use crate::prophunt::{Phase, PropHunt, RoundEnd, KNIFE_ATTEMPTS};
 use crate::seats::{seat_name, LocalViews};
 use crate::stage_material::StageMaterial;
 use crate::{menu, render_pose, World};
+use bevy::camera::visibility::RenderLayers;
 use bevy::prelude::*;
 
 /// Whether slot `slot`'s fighter is hidden behind a disguise this frame.
@@ -276,7 +277,7 @@ pub fn sync_disguises(
     fixed: Res<Time<Fixed>>,
     view: Option<Res<crate::props_view::PropView>>,
     children: Query<&Children>,
-    meshes: Query<(&Mesh3d, Option<&MeshMaterial3d<StandardMaterial>>, Option<&MeshMaterial3d<StageMaterial>>, &GlobalTransform)>,
+    meshes: Query<(&Mesh3d, Option<&MeshMaterial3d<StandardMaterial>>, Option<&MeshMaterial3d<StageMaterial>>, &GlobalTransform, Option<&RenderLayers>)>,
     mut models: Query<(Entity, &DisguiseModel, &mut Transform)>,
 ) {
     let ph = world.0.prophunt.as_ref();
@@ -300,7 +301,7 @@ pub fn sync_disguises(
             let mut stack = vec![node];
             while let Some(e) = stack.pop() {
                 if let Ok(piece) = meshes.get(e) {
-                    pieces.push((piece.0.clone(), piece.1.cloned(), piece.2.cloned(), piece.3.compute_transform()));
+                    pieces.push((piece.0.clone(), piece.1.cloned(), piece.2.cloned(), piece.3.compute_transform(), piece.4.cloned()));
                 }
                 if let Ok(c) = children.get(e) {
                     stack.extend(c.iter());
@@ -311,8 +312,14 @@ pub fn sync_disguises(
             continue; // the stage hasn't loaded yet: try again next frame
         }
         let root = commands.spawn((DisguiseModel { slot, prop: d.prop }, disguise_transform(&world, &fixed, slot, d), Visibility::Visible, MatchScene)).id();
-        for (mesh, standard, stage, local) in pieces {
+        for (mesh, standard, stage, local, layers) in pieces {
             let mut e = commands.spawn((mesh, local, ChildOf(root)));
+            // The object's own pieces include its shadow volumes (`<object>_shadowvol_dN`, plain white geometry on a
+            // layer no camera draws, only the shadow light): without their layers the copy drew them as white slabs
+            // through the seat and cast no shadow, which gave every disguised hider away.
+            if let Some(l) = layers {
+                e.insert(l);
+            }
             if let Some(m) = standard {
                 e.insert(m);
             }
@@ -441,7 +448,7 @@ mod tests {
         let mut app = overlay_app(prop_hunt(2));
         // Side by side at 1280x720: the seeker (slot 0) is the left half, covered.
         assert_eq!(box_of(&mut app, Part::Cover(0)), Some([Val::Px(0.0), Val::Px(0.0), Val::Px(640.0), Val::Px(720.0)]));
-        assert!(text_of(&mut app, Part::CoverText(0)).contains("YOU ARE THE SEEKER\n\n20"), "{}", text_of(&mut app, Part::CoverText(0)));
+        assert!(text_of(&mut app, Part::CoverText(0)).contains("YOU ARE THE SEEKER\n\n30"), "{}", text_of(&mut app, Part::CoverText(0)));
         assert_eq!(box_of(&mut app, Part::Cover(1)), None, "the hider sees");
         let banner = text_of(&mut app, Part::Banner(1));
         assert!(banner.contains("HIDE!") && banner.contains("A / X: BECOME AN OBJECT") && banner.contains("B: FREEZE"), "{banner}");
@@ -459,7 +466,7 @@ mod tests {
         // The seconds count down.
         app.world_mut().resource_mut::<World>().0.prophunt.as_mut().unwrap().phase = Phase::Countdown { left: SEEKER_COUNTDOWN_TICKS / 2 };
         app.update();
-        assert!(text_of(&mut app, Part::CoverText(0)).contains("\n10\n"));
+        assert!(text_of(&mut app, Part::CoverText(0)).contains("\n15\n"));
     }
 
     #[test]
@@ -510,7 +517,7 @@ mod tests {
         m.players[1].prev_yaw = 0.5;
         app.insert_resource(World(m)).init_resource::<Time<Fixed>>().add_systems(Update, sync_disguises);
         // The object's placed node: one mesh piece in stage space.
-        let node = app.world_mut().spawn((Mesh3d(Handle::default()), MeshMaterial3d::<StandardMaterial>(Handle::default()), GlobalTransform::from_translation(Vec3::new(15.0, 10.0, 15.0)))).id();
+        let node = app.world_mut().spawn((Mesh3d(Handle::default()), MeshMaterial3d::<StandardMaterial>(Handle::default()), GlobalTransform::from_translation(Vec3::new(15.0, 10.0, 15.0)), RenderLayers::layer(crate::shadows::VOLUME_LAYER))).id();
         app.insert_resource(crate::props_view::PropView::with_nodes([(7, vec![node])]));
         app.update();
         let count = |app: &mut App| app.world_mut().query::<&DisguiseModel>().iter(app.world()).count();
@@ -523,7 +530,9 @@ mod tests {
         let mut q = app.world_mut().query::<(&DisguiseModel, &Transform, &Children)>();
         let (d, t, kids) = q.single(app.world()).unwrap();
         assert_eq!((d.slot, d.prop, kids.len()), (1, 7, 1));
-        // The object's base centre (15, 0, 15) lands on the hider's feet, unturned (the hider hasn't turned since).
+        // A piece on the shadow volume layer (the object's own volume) stays on it: no camera draws it as white geometry.
+        let kid = kids[0];
+        assert_eq!(app.world().get::<RenderLayers>(kid), Some(&RenderLayers::layer(crate::shadows::VOLUME_LAYER)));        // The object's base centre (15, 0, 15) lands on the hider's feet, unturned (the hider hasn't turned since).
         let base = t.transform_point(Vec3::new(15.0, 0.0, 15.0));
         assert!(base.distance(Vec3::new(100.0, 0.0, 0.0)) < 1e-3, "{base:?}");
         // The hider turns: the copy turns with them.

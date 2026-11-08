@@ -25,7 +25,7 @@ import shutil
 import sys
 
 LIVE = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Packages", "Microsoft.MSEsper_8wekyb3d8bbwe")
-BACKUP = os.path.expandvars(r"%USERPROFILE%\.pdtools\original-save-backup-20261001")
+BACKUP = r"C:\Users\laure\.pdtools\original-save-backup-20261001"
 VOLATILE_PREFIX = ("AC/",)
 
 

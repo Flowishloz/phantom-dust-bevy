@@ -274,7 +274,7 @@ now with `[reg+off]` / `d[..]` / `f[..]` memory arguments) logs per program tick
 fighter's state (`+0x12f04`), clip (`+0x12f00`) and position (`+0x12e40..48`) at the
 fighter update `0x14024ec80`, plus the press (`0x140258180`), the fire
 (`0x1402626d0`), the Level add (`0x14024d930`), every sound and every capture, to
-`%USERPROFILE%\.pdtools\trace\aura_use.csv`. Laurence captures one Aura Particle,
+`C:\Users\laure\.pdtools\trace\aura_use.csv`. Laurence captures one Aura Particle,
 then holds the stick and presses its button, holding for 3 seconds: if the position
 keeps changing and the state stays 0/1 the use holds nothing; if it freezes, the
 state number and the frames it lasts are the rule. (The register / offset meanings are

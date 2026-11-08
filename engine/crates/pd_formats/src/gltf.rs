@@ -1468,7 +1468,7 @@ mod collision_filter_tests {
     /// the specular extras, and the frame attributes of bump draws.
     #[test]
     fn stage_export_carries_the_volume_grid_and_bump_draws() {
-        let dir = std::env::var_os("PD_GAME_FILES").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"..\..\..\game_files\Assets\Data\Map"));
+        let dir = std::env::var_os("PD_GAME_FILES").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Map"));
         let (alr, dat) = (dir.join("st05.alr"), dir.join("st05.dat"));
         if !alr.is_file() || !dat.is_file() {
             eprintln!("skipped: no game files at {}", dir.display());
@@ -1576,7 +1576,7 @@ mod collision_filter_tests {
     fn shadow_volumes_exist_on_exactly_these_stage_files() {
         let dir = std::env::var_os("PD_GAME_FILES")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from(r"..\..\..\game_files\Assets\Data\Map"));
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Map"));
         if !dir.is_dir() {
             eprintln!("skipped: no game files at {}", dir.display());
             return;

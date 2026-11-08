@@ -32,7 +32,7 @@ Verified on the real program by the PC lane. These override the hypotheses below
 ### Evidence and limits
 
 - Read the existing Ghidra export at
-  `%USERPROFILE%\.pdtools\re-out\decomp_all.c` (three requested functions,
+  `C:\Users\laure\.pdtools\re-out\decomp_all.c` (three requested functions,
   plus only their immediate movement/input dependencies needed to answer the
   brief). Independently disassembled the local `game_files/PDUWP.exe` with
   MinGW objdump. Read float constants directly from the PE by VA.

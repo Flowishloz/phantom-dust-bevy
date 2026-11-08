@@ -292,23 +292,41 @@ impl StageSound {
         Some(id)
     }
 
-    /// The surface-hit sound of a shot that ended on the stage: `from` is where it was last seen
-    /// flying (its program position), `step` the program step it was about to make. Once per impact
-    /// (the same-frame rule of `impact_at`).
+    /// The surface-hit sound of a shot that ended on the stage: `from` is the program position the
+    /// shot's last step started from (where it was last seen standing between two steps), `step` about
+    /// that program step. Once per impact (the same-frame rule of `impact_at`).
     pub fn shot_contact(&mut self, from: Vec3, step: Vec3, tick: u64) -> Option<u32> {
         self.recent.retain(|&(_, t)| t == tick);
         let surf = self.surf.as_ref()?;
         // READ (`FUN_1401633b0`): only a step that crosses a face makes a contact, so a shot that ends standing
-        // still (a crawler whose life ran out) touches nothing. Our end point can stop short of the face the
-        // program's step crossed, hence the short reach past the step (UNCONFIRMED geometry slack).
+        // still (a crawler whose life ran out) touches nothing. READ (`FUN_14026e720` -> `FUN_14026ca50`): the
+        // contact is the face nearest the START of the step that ended the shot (segment `+0x140 -> +0x100`,
+        // `FUN_140163e80`), so the search starts at that step's start, not half way along it (round 6: a lob
+        // whose step crossed a face in its first half, Rock Shot 8, lost its class-6 sound that way). Our end
+        // point can stop short of the face the program's step crossed, hence the reach past the step
+        // (UNCONFIRMED geometry slack).
         if step.length() <= 0.01 {
             return None;
         }
-        let class = surf.class_along(from, from + step * 1.5).or_else(|| surf.class_nearest(from + step, SHOT_CONTACT_REACH))?;
+        let class = surf.class_along(from, from + step * 2.0).or_else(|| surf.class_nearest(from + step * 1.5, SHOT_CONTACT_REACH))?;
         if self.log {
             info!("sfx: shot contact at {from:?} step {step:?} class {class}");
         }
         self.contact_sound(class, from, tick)
+    }
+
+    /// A melee blow's stage sweep this tick (`Combat::melee_sweep`: `FUN_140269db0` / `FUN_14026a0d0`
+    /// sweep `DAT_1404bec68` from the caster's centre to the blade tip / 20 u ahead): `None` when the
+    /// segment crosses no stage face; otherwise the face nearest its start made a contact (which ends the
+    /// sweeping for that blow: flag `0x400` is cleared) and maybe its surface-hit sound.
+    pub fn sweep_contact(&mut self, from: Vec3, to: Vec3, tick: u64) -> Option<Option<u32>> {
+        self.recent.retain(|&(_, t)| t == tick);
+        let (t, class) = self.surf.as_ref()?.hit_along(from, to)?;
+        let at = from + (to - from) * t;
+        if self.log {
+            info!("sfx: melee sweep {from:?} -> {to:?} crosses class {class} at {at:?}");
+        }
+        Some(self.contact_sound(class, at, tick))
     }
 
     /// The object `index` broke at `pos`: queue its type's sound group.
@@ -360,6 +378,7 @@ pub fn ground_cues(
     mut queue: ResMut<crate::sfx::CueQueue>,
     mut seen_event: Local<u32>,
     mut apex: Local<[f32; crate::combat::MAX_PLAYERS]>,
+    mut swept: Local<[(u16, bool); crate::combat::MAX_PLAYERS]>,
 ) {
     use crate::combat::CombatEvent;
     let c = &world.0.combat;
@@ -393,7 +412,14 @@ pub fn ground_cues(
                 // recorded landings (class 2 / 3 / 5), as before this lane.
                 ids.extend(class.and_then(landing_sound).or(class.is_none().then_some(crate::sfx::SFX_KNOCK_GROUND)));
                 // The shock's probe sphere: radius by fall class around the body centre (`FUN_140254c80`).
-                let (centre, reach) = if switched_off("PD_SFX_OLD_LANDING") { (pos, 20.0) } else { knock_landing_probe(pos, apex[who] - pos.y) };
+                let fall = apex[who] - pos.y;
+                let (centre, reach) = if switched_off("PD_SFX_OLD_LANDING") {
+                    (pos, 20.0)
+                } else if switched_off("PD_SFX_LANDING_UP") {
+                    (pos + Vec3::Y * CENTRE_HEIGHT, landing_probe_radius(fall))
+                } else {
+                    knock_landing_probe(pos, world.0.players[who].yaw, fall)
+                };
                 probe(&ground, centre, reach);
             }
             // An airborne landing: the same landing sound; the shock (and its surface-hit sound)
@@ -423,11 +449,35 @@ pub fn ground_cues(
                     info!("sfx: burst skill {skill} at {:.2},{:.2},{:.2} tick {tick}", pos.x, pos.y, pos.z);
                 }
                 // READ (P0-SOUND section 13): a rain drop or shell's last step crossing the stage is a sweep contact.
-    if !switched_off("PD_SFX_NO_BURST_SURFACE") {
+                // READ (section 14): a Hole / quake (motion 15 / 16, `FUN_14026a510` / `FUN_14026a7f0`) and a Rain
+                // column (7, `FUN_140266fb0` / `FUN_140267410`) touch the stage only through the floor ray
+                // `FUN_140163680` (`DAT_1404beca8`) and the line of fire `FUN_1401641b0` (`DAT_1404bec58`), probes
+                // with no `pdStageColPtr_PlayerBullet` owner: they make no impact mark and no surface-hit sound.
+                let motion = c.skill(skill).map(|d| d.motion());
+                let no_contact = matches!(motion, Some(crate::moves::motion::HOLE_A | crate::moves::motion::HOLE_B | crate::moves::motion::RAIN_A));
+                if !switched_off("PD_SFX_NO_BURST_SURFACE") && (!no_contact || switched_off("PD_SFX_HOLE_SURFACE")) {
                     ids.extend(ground.impact_at(pos, BURST_CONTACT_REACH, tick));
                 }
             }
             _ => {}
+        }
+    }
+    // A melee blow's stage sweep (`Combat::melee_sweep`), until its first contact.
+    if !switched_off("PD_SFX_NO_MELEE_SWEEP") {
+        for i in c.roster.slots() {
+            let f = &c.fighters[i];
+            if swept[i].0 != f.cast_seq {
+                swept[i] = (f.cast_seq, false);
+            }
+            if swept[i].1 {
+                continue;
+            }
+            if let Some((from, to)) = c.melee_sweep(i, &world.0.players) {
+                if let Some(sound) = ground.sweep_contact(from, to, tick) {
+                    swept[i].1 = true;
+                    ids.extend(sound);
+                }
+            }
         }
     }
     if let Some((i, class, centre)) = sphere {
@@ -459,15 +509,19 @@ pub fn landing_probe_radius(fall: f32) -> f32 {
     }
 }
 
-/// The centre height of a playable body above its feet, 9 units (charaset record +0x12 / 10, stored at
-/// fighter `+0x12e98`: PROGRAM-RE.md "Character table in memory"). The knock-down landing probe is
-/// centred `pos - axis * 9` (`FUN_140254c80`); the axis sign is not read, but the floor, the only face a
-/// landing touches, is 9 units from the centre either way.
+/// A playable body's centre height, 9 units (charaset record +0x12 / 10, stored at fighter `+0x12e98`:
+/// PROGRAM-RE.md "Character table in memory").
 pub const CENTRE_HEIGHT: f32 = 9.0;
 
-/// Where the knock-down landing's probe sphere is, and how big: (centre, radius).
-pub fn knock_landing_probe(feet: Vec3, fall: f32) -> (Vec3, f32) {
-    (feet + Vec3::Y * CENTRE_HEIGHT, landing_probe_radius(fall))
+/// Where the knock-down landing's probe sphere is, and how big: (centre, radius). READ (r7sound,
+/// `FUN_140254c80` state 0x11): the centre is `+0x12e40 - +0x12e20 * +0x12e98`, the feet moved 9 u
+/// (the centre height) back along ROW 2 of the fighter matrix (`+0x12e00`, reset to identity and turned
+/// by the yaw, `FUN_1402906e0`): 9 u behind the body at FLOOR height, where the lying body's back is, not
+/// 9 u above the feet. MEASURED on the PC original's 39 recorded knock-down landings (take positions and
+/// facing, st06 surface classes, first chunk in file order): this centre gives the take's own surface-hit
+/// sound in 35 (all 29 that sound, 6 of the 10 silent ones), the old centre 9 u above the feet 29.
+pub fn knock_landing_probe(feet: Vec3, yaw: f32, fall: f32) -> (Vec3, f32) {
+    (feet - Vec3::new(yaw.sin(), 0.0, yaw.cos()) * CENTRE_HEIGHT, landing_probe_radius(fall))
 }
 
 /// A shot's stage contact when its sweep crosses no face of the sidecar: the nearest face this close to
@@ -525,7 +579,7 @@ mod tests {
     }
 
     /// `FUN_140254c80`, state 0x11: a fall under 40 probes with radius 10, up to 80 with 15, over 80 with 20,
-    /// from the body centre 9 units above the feet.
+    /// centred 9 units behind the feet along the facing (fighter matrix row 2).
     #[test]
     fn the_knock_down_landing_probe_follows_the_fall_class() {
         assert_eq!(landing_probe_radius(0.0), 10.0);
@@ -534,8 +588,13 @@ mod tests {
         assert_eq!(landing_probe_radius(40.0), 15.0);
         assert_eq!(landing_probe_radius(80.0), 15.0);
         assert_eq!(landing_probe_radius(80.1), 20.0);
-        let (centre, r) = knock_landing_probe(Vec3::new(1.0, 330.0, 2.0), 65.9);
-        assert_eq!((centre, r), (Vec3::new(1.0, 339.0, 2.0), 15.0));
+        // Facing +Z: the centre is 9 u behind the feet, at floor height.
+        let (centre, r) = knock_landing_probe(Vec3::new(1.0, 330.0, 2.0), 0.0, 65.9);
+        assert!((centre - Vec3::new(1.0, 330.0, -7.0)).length() < 1e-4, "{centre:?}");
+        assert_eq!(r, 15.0);
+        // Facing +X: 9 u toward -X.
+        let (centre, _) = knock_landing_probe(Vec3::new(1.0, 330.0, 2.0), std::f32::consts::FRAC_PI_2, 10.0);
+        assert!((centre - Vec3::new(-8.0, 330.0, 2.0)).length() < 1e-4, "{centre:?}");
     }
 
     #[test]

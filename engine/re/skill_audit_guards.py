@@ -1,7 +1,7 @@
 """The guard battery, the automatic Shelters / Orb / Amulet and the other probes of lane `probes` (wave 6).
 
 Program side of what `crates/pd_game/src/combat/skill_audit.rs` observes through `Combat::strike` and the
-incoming-attack scenarios. Every rule is READ from `%USERPROFILE%/.pdtools/re-out/decomp_all.c` (addresses
+incoming-attack scenarios. Every rule is READ from `C:/Users/laure/.pdtools/re-out/decomp_all.c` (addresses
 in the comments). `FUN_140264340` (the guard object's update) is not in the Ghidra export (Ghidra never made it a function; it
 sits between `FUN_1402642f0` and `FUN_140264570`): it and the Add-effect argument of `FUN_140271ed0` case 2 were read by
 disassembling PDUWP.exe with capstone in a scratch venv (`exe_const.va2f` gives the file offset of an address).

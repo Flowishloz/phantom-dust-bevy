@@ -22,7 +22,7 @@ evidence ledger. You write ONE markdown file; you change nothing else.
 
 - Our code: `engine/crates/*/src`. Tests: `cargo test` is NOT yours to run
   (parallel auditors would fight over the build folder). Read only.
-- The original PC program, decompiled: `%USERPROFILE%\.pdtools\re-out\decomp_all.c`
+- The original PC program, decompiled: `C:\Users\laure\.pdtools\re-out\decomp_all.c`
   (16 MB, Ghidra C of every function in `game_files/PDUWP.exe`),
   `functions.txt` (addresses), `strings_all.txt`. Helpers in `engine/re/`
   (`decomp_fn.py`, `xref.py`, `call_consts.py`, `exe_const.py`,

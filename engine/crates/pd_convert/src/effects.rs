@@ -398,7 +398,10 @@ pub fn shot_points(dir: &Path) -> Result<BTreeMap<u32, Vec<effect::ShotMarker>>>
 ///   (effect number -> positions in the caster's frame, in marker order);
 /// * `<cache>/chars/<id>.hand.json` -- for every character, its right hand
 ///   (the program's fallback spawn / melee point) through each `ATK_*` clip
-///   (`pd_formats::character::hand_paths`).
+///   (`pd_formats::character::hand_paths`);
+/// * `<cache>/chars/<id>.body1.json` -- for every character, its BODY1 joint
+///   (the program's collider point) through every clip
+///   (`pd_formats::character::body1_paths`).
 ///
 /// `--list` also prints every marker.
 pub fn shot_points_run(args: &[String]) -> Result<()> {
@@ -431,7 +434,7 @@ pub fn shot_points_run(args: &[String]) -> Result<()> {
     println!("shotpoints.json: {} effects with SHOT markers", markers.len());
     let mut dirs: Vec<_> = std::fs::read_dir(data.join("Player"))?.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.is_dir()).collect();
     dirs.sort();
-    let mut n = 0;
+    let (mut n, mut nb) = (0, 0);
     for d in dirs {
         let Some(id) = d.file_name().and_then(|s| s.to_str()).map(String::from) else { continue };
         let base = d.join(format!("{id}.alr"));
@@ -451,8 +454,20 @@ pub fn shot_points_run(args: &[String]) -> Result<()> {
             }
             Err(e) => println!("{id}: skipped ({e:#})"),
         }
+        match pd_formats::character::body1_paths(&a, &opts) {
+            Ok(j) => {
+                let clips = j["clips"].as_object().map_or(0, |c| c.len());
+                std::fs::write(cache.join("chars").join(format!("{id}.body1.json")), j.to_string())?;
+                nb += 1;
+                if list {
+                    println!("{id}: BODY1 through {clips} clips");
+                }
+            }
+            Err(e) => println!("{id}: no BODY1 path ({e:#})"),
+        }
     }
     println!("chars/<id>.hand.json: {n} characters");
+    println!("chars/<id>.body1.json: {nb} characters");
     Ok(())
 }
 

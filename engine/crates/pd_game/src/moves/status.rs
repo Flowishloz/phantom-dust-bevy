@@ -83,6 +83,7 @@ mod self_stat {
 
 /// Skywalk: s43 = 3, s44 = 5 (a movement special that the capsule colour files under Status).
 const SKYWALK: i16 = 51;
+const DEMONS_WING: i16 = 292;
 
 /// Family (s42) on self skills: 70 permanent, 71 timed (s53 table ticks).
 const FAMILY_PERMANENT: i16 = 70;
@@ -108,6 +109,9 @@ pub fn apply(c: &mut Combat, players: &mut [Player], caster: usize, reach: Reach
         // float status 11 for s46 ticks and the jump of height s45 that hangs at its top
         // (`FUN_140270200` case 5; `special::float_and_jump`).
         Reach::Caster if def.id == SKYWALK => super::special::float_and_jump(c, players, caster, def),
+        // Demon's Wing: invisible + float status, then the Levitate-style jump of height s49
+        // (`FUN_140270b00` case 0xd; `special::wings`).
+        Reach::Caster if def.id == DEMONS_WING => super::special::wings(c, players, caster, def),
         Reach::Caster => {
             let target = c.aim_target(caster, players);
             apply_self(c, caster, target, def)
@@ -225,7 +229,7 @@ fn apply_self(c: &mut Combat, caster: usize, target: usize, def: &SkillDef) -> b
         // with the travelling Binding Circle / Bind Shot; s45 doesn't tell
         // them apart here, so they're kept by id (MOVES.md Phase 0: "fall
         // back to skill id ... and say so in a comment").
-        100 => hover_or_voice(&mut c.fighters[caster], def),
+        100 => hover_or_voice(def),
         FAMILY_PERMANENT | FAMILY_TIMED => apply_self_stat(&mut c.fighters[caster], def),
         // Place of Invisibility (353) and Martial Arts Scroll (365) are
         // unregistered (boss-only) skills whose FAMILY field reads 0 (a data
@@ -289,17 +293,9 @@ fn apply_self_stat(f: &mut Fighter, def: &SkillDef) -> bool {
 /// ... Add: Invisibility ... for 15 sec" — both effects together, kept as
 /// one hover+invisible skill since the table has no separate slot for the
 /// Add:), Mind Reading (a 2-v-2 voice feature: nothing for the sim to do).
-fn hover_or_voice(f: &mut Fighter, def: &SkillDef) -> bool {
+fn hover_or_voice(def: &SkillDef) -> bool {
     match def.id {
-        // Skywalk (51) is handled before this in `apply` (it is a movement special).
-        292 => {
-            let ticks = table_ticks(def.raw[53]);
-            f.status.hover_ticks = ticks;
-            f.status.hover_height = 7.0 * FOOT;
-            f.status.invisible_ticks = ticks;
-            f.status_hover = true;
-            true
-        }
+        // Skywalk (51) and Demon's Wing (292) are handled before this in `apply`.
         231 => true,
         _ => false,
     }
@@ -632,12 +628,16 @@ mod tests {
         assert!((c.fighters[0].status.hover_height - 50.0).abs() < 0.01, "where the rise ends: 10 x s45");
         assert_eq!(players[0].jump_windup(), 26, "the jump's start clip first (13 program ticks)");
 
-        let demons_wing = def(292, Capsule::Status, 5, &[(f::FAMILY, 100), (53, 450)]);
+        // Demon's Wing (s43 = 4, s45 = 13, s49 = 2, s53 = 450): the Levitate-style jump of height
+        // s49 (apex 10 x 2 = 20 u, LIVE take 292 rose 18.92 u from the sunk start), after the
+        // start clip's wind-up, with status 8 + 11 for s53 ticks.
+        let demons_wing = def(292, Capsule::Status, 5, &[(f::FAMILY, 100), (43, 4), (45, 13), (49, 2), (53, 450)]);
         let (mut c, mut players, _col) = setup(vec![demons_wing.clone()], 50.0);
         apply(&mut c, &mut players, 0, Reach::Caster, &demons_wing);
         assert_eq!(c.fighters[0].status.hover_ticks, 900);
-        assert!((c.fighters[0].status.hover_height - 25.62).abs() < 0.01, "7 ft");
+        assert!((c.fighters[0].status.hover_height - 20.0).abs() < 0.01, "where the rise ends: 10 x s49");
         assert_eq!(c.fighters[0].status.invisible_ticks, 900, "\"Add: Invisibility\"");
+        assert_eq!(players[0].jump_windup(), 26, "the jump's start clip first (13 program ticks)");
     }
 
     #[test]

@@ -148,7 +148,7 @@ $c=".\target\release\pd_convert.exe"; $D="..\game_files\Assets\Data"
 & $c chars "$D" cache                # chars.json: each character's dodge move (FORMATS-ANIMATION.md)
 & $c skyscroll "$D\Map" cache        # stNN.sky.json: sky drift rates (GAME.md "The sky drifts")
 & $c capsules "$D\Map\st00.alr" "$D\Map\st00.dat" cache\fx\capsules
-& $c shotpoints "$D" cache           # SHOTnn markers for the sim
+& $c shotpoints "$D" cache           # SHOTnn markers, right-hand paths and BODY1 paths (chars/<id>.body1.json, round 8) for the sim
 & $c cpu "$D" cache                  # CPU opponent data -> cache/com (FORMATS-CPU.md)
 & $c musictracks "$D\BGM" cache\music  # <name>.pdm music with loop regions ("Music" below; added 2026-10-07 by the archivist from the infomusic lane)
 Get-ChildItem "$D\Player" -Directory | % { $n=$_.Name; if (Test-Path "$D\Player\$n\$n.alr") { & $c character "$D\Player\$n\$n.alr" "cache\chars\$n.glb" } }

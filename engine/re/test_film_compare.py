@@ -31,6 +31,15 @@ class FilmCompareTests(unittest.TestCase):
         d = fc.diff(z, o, {}, {}, {"0.5": 90}, {})
         self.assertEqual([k for k, _ in d], ["sound_extra"])
 
+    def test_class_26_27_footsteps_are_noise_but_bind_and_hit_sounds_next_to_them_are_not(self):
+        # READ DAT_1402f6270: st06 surface classes 26 / 27 play common 121-124 / 125-128 (+1 for the second foot), the idle foot plant
+        # 52 ticks after a stun (r9sound). common/100 (bind) and 0.129 are not footsteps of those classes.
+        z = {"fire": 59, "hit": None, "end": 200, "p0_aura": 0, "p1_health": 0}
+        o = {"fire": 59, "hit": None, "p0_aura": 0, "p1_health": 0}
+        self.assertEqual(fc.diff(z, o, {"0.127": 99, "0.128": 135, "0.123": 5}, {}, {}, {}), [])
+        d = fc.diff(z, o, {"0.100": 99, "0.129": 135}, {}, {}, {})
+        self.assertEqual(d[0][1], "sounds missing in ours: 0.100 0.129")
+
     def test_cast_end_is_compared(self):
         d = fc.diff({"fire": 1, "hit": None, "cast_end": 93}, {"fire": 1, "hit": None, "cast_end": 99.5}, {}, {}, {}, {})
         self.assertEqual([k for k, _ in d], ["cast_end"])

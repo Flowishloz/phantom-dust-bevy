@@ -814,6 +814,55 @@ pub fn hand_paths(a: &Alr, opts: &CharacterOptions) -> Result<Value> {
     Ok(json!({ "joint": "RHAND", "fps": FPS, "clips": clips }))
 }
 
+/// The `BODY1` joint's name hash: the third name of the program's five-bone table at `0x1402dcdd8`
+/// (LHAND, RHAND, BODY1, ALPHA, HEAD; `FUN_14025d380`).
+pub const BODY1_HASH: u32 = 0x4D1D_1710;
+
+/// The program's collider point through every clip: the `BODY1` bone's world position per clip frame
+/// (READ `FUN_1402513a0` copies BODY1's world translation row into the collider `+0x60..+0x68` after
+/// each skeleton update `FUN_140298020`; every object hit test, the melee dash and the aim read it).
+/// docs/PROGRAM-RE.md "BODY1 per clip".
+///
+/// Per clip of `ANIM_NAMES` the model has, one sample per clip frame (30 fps, frame 0 = the first
+/// pose), in the frame `hand_paths` writes (x right, y up, z forward at yaw 0, feet at the origin), in
+/// two columns: `bind` = the root joint held at its bind translation (as the exported glb: the body's
+/// position carries the clip's root motion), `anim` = the root joint's animated translation kept, as
+/// the program's skeleton keeps it (`FUN_140298020` has no root special case). The sim picks per clip
+/// which one applies.
+pub fn body1_paths(a: &Alr, opts: &CharacterOptions) -> Result<Value> {
+    let skinned: Vec<&Model> = a.models.iter().filter(|m| m.has_skeleton && m.draws.iter().any(|d| !d.palette.is_empty())).collect();
+    let Some(&model) = skinned.first() else {
+        bail!("no skinned model found");
+    };
+    let Some(body) = model.joints.iter().position(|j| j.name == BODY1_HASH) else {
+        bail!("no BODY1 joint");
+    };
+    let order = opts.order;
+    let bind = pose::bind_locals(model);
+    let r2 = |v: f32| (v * 100.0).round() / 100.0;
+    let mut clips = serde_json::Map::new();
+    for (id, name) in ANIM_NAMES.iter().enumerate() {
+        let Some(an) = anim::read_animation(a, id)? else { continue };
+        let len = an.length().max(1.0);
+        let frames = len.ceil() as usize + 1;
+        let (mut held, mut free) = (Vec::with_capacity(frames), Vec::with_capacity(frames));
+        for f in 0..frames {
+            let mut locals = pose::animated_locals(model, &an, (f as f32).min(len));
+            let p = to_rh(pose::world_matrices(model, &locals, order)[body]).w_axis;
+            free.push([r2(p.x), r2(p.y), r2(p.z)]);
+            for (j, l) in locals.iter_mut().enumerate() {
+                if model.joints[j].parent < 0 {
+                    l.t = bind[j].t;
+                }
+            }
+            let p = to_rh(pose::world_matrices(model, &locals, order)[body]).w_axis;
+            held.push([r2(p.x), r2(p.y), r2(p.z)]);
+        }
+        clips.insert((*name).to_string(), json!({ "frames": frames - 1, "bind": held, "anim": free }));
+    }
+    Ok(json!({ "joint": "BODY1", "fps": FPS, "clips": clips }))
+}
+
 /// Tangent (xyz, w = handedness) that gives a vertex the bind-space frame
 /// its object-space normal map is read in.
 ///
@@ -861,7 +910,7 @@ mod tests {
     /// each with geometry and no skin.
     #[test]
     fn the_authored_shadow_hulls_are_exported_under_their_joints() {
-        let dir = std::env::var_os("PD_GAME_FILES_PLAYER").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"..\..\..\game_files\Assets\Data\Player"));
+        let dir = std::env::var_os("PD_GAME_FILES_PLAYER").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Player"));
         for (id, want) in [("pc00a", 19usize), ("pc04a", 19)] {
             let path = dir.join(id).join(format!("{id}0.alr"));
             if !path.is_file() {
@@ -890,12 +939,72 @@ mod tests {
     /// program's target point is that bone's world x / y / z (`FUN_1402513a0`); the heights printed here are
     /// `pd_game::body::point_height` (MEASURED 2026-10-09). Run:
     /// `cargo test -p pd_formats body1_height_probe -- --ignored --nocapture`.
+    /// Probe (ignored; needs the game files): BODY1 through the clip named by `PD_PROBE_CLIP` (default ATK_GROUND),
+    /// root at its bind translation (`PD_PROBE_ANIM_ROOT=1`: animated), in the frame `hand_paths` writes (x right, y
+    /// up, z forward at yaw 0). Run: `cargo test -p pd_formats body1_clip_probe -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn body1_clip_probe() {
+        const BODY1: u32 = 0x4D1D_1710;
+        let clip = std::env::var("PD_PROBE_CLIP").unwrap_or_else(|_| "ATK_GROUND".into());
+        let dir = std::env::var_os("PD_GAME_FILES_PLAYER").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Player"));
+        let Some(idx) = ANIM_NAMES.iter().position(|n| *n == clip) else { panic!("no clip {clip}") };
+        for id in ["pc00a", "pc01a"] {
+            let Ok(a) = Alr::load(&dir.join(id).join(format!("{id}0.alr"))) else { continue };
+            let Some(model) = a.models.iter().find(|m| m.has_skeleton && m.draws.iter().any(|d| !d.palette.is_empty())) else { continue };
+            let Some(j) = model.joints.iter().position(|j| j.name == BODY1) else { continue };
+            let bind = pose::bind_locals(model);
+            let Some(an) = anim::read_animation(&a, idx).unwrap() else { continue };
+            let mut out = String::new();
+            let animated_root = std::env::var_os("PD_PROBE_ANIM_ROOT").is_some();
+            for f in 0..=(an.length().ceil() as usize) {
+                let mut locals = pose::animated_locals(model, &an, (f as f32).min(an.length()));
+                for (k, l) in locals.iter_mut().enumerate() {
+                    if model.joints[k].parent < 0 && !animated_root {
+                        l.t = bind[k].t;
+                    }
+                }
+                let p = to_rh(pose::world_matrices(model, &locals, Order::GAME)[j]).w_axis;
+                out += &format!(" {f}:({:.1},{:.1},{:.1})", p.x, p.y, p.z);
+            }
+            eprintln!("{id} {clip} BODY1{out}");
+        }
+    }
+
+    /// Real data (skipped without the game files): `body1_paths` writes every clip of pc01a, its idle
+    /// pose is the FK value of `body1_height_probe` (animated root: 1.87 behind, 0.46 right, 11.89 up;
+    /// bind root: over the feet), and a knock-down clip puts BODY1 behind the feet (BLOW0_FRONT).
+    #[test]
+    fn body1_paths_follow_the_clip() {
+        let dir = std::env::var_os("PD_GAME_FILES_PLAYER").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Player"));
+        let path = dir.join("pc01a").join("pc01a0.alr");
+        if !path.is_file() {
+            eprintln!("skipped: no game files at {}", path.display());
+            return;
+        }
+        let a = Alr::load(&path).unwrap();
+        let opts = CharacterOptions { order: Order::GAME, anims: Vec::new(), extra_anim_sources: Vec::new(), coat_rig: None };
+        let j = body1_paths(&a, &opts).unwrap();
+        let clips = j["clips"].as_object().unwrap();
+        assert!(clips.len() > 100, "{} clips", clips.len());
+        let at = |clip: &str, col: &str, f: usize| -> [f64; 3] {
+            let v = &j["clips"][clip][col][f];
+            [v[0].as_f64().unwrap(), v[1].as_f64().unwrap(), v[2].as_f64().unwrap()]
+        };
+        let idle = at("WAIT0", "anim", 0);
+        assert!((idle[2] + 1.87).abs() < 0.1 && (idle[0] - 0.46).abs() < 0.1 && (idle[1] - 11.89).abs() < 0.1, "{idle:?}");
+        let bind = at("WAIT0", "bind", 0);
+        assert!(bind[0].abs() < 0.2 && bind[2].abs() < 0.2, "{bind:?}");
+        let blow = at("BLOW0_FRONT", "anim", 0);
+        assert!(blow[2] < -2.5 && blow[1] < 7.0, "{blow:?}");
+    }
+
     #[test]
     #[ignore]
     fn body1_height_probe() {
         // The third name of the program's five-bone hash table at 0x1402dcdd8 (LHAND, RHAND, BODY1, ALPHA, HEAD).
         const BODY1: u32 = 0x4D1D_1710;
-        let dir = std::env::var_os("PD_GAME_FILES_PLAYER").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"..\..\..\game_files\Assets\Data\Player"));
+        let dir = std::env::var_os("PD_GAME_FILES_PLAYER").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Player"));
         for id in ["pc00a", "pc01a", "pc02a", "pc03a", "pc04a", "pc05a", "pc06a", "pc07a", "pc08a", "pc09a", "pc10a"] {
             let Ok(a) = Alr::load(&dir.join(id).join(format!("{id}0.alr"))) else {
                 eprintln!("skipped: no game files for {id}");
@@ -918,6 +1027,58 @@ mod tests {
                 out += &format!(" f{f}: ({:.2}, {:.2}, {:.2}) root animated ({:.2}, {:.2}, {:.2})", p.x, p.y, p.z, root.x, root.y, root.z);
             }
             eprintln!("{id} BODY1{out}");
+            // The whole clip: mean and range of (forward, right, up) in the fighter's frame as the program has it
+            // (model turned by the facing + 180 deg, `0x14024f0xx`: forward = -z, right = -x of the left-handed
+            // model space = +z / -x after `to_rh`), root at its bind translation (b) and animated (a).
+            for animated_root in [false, true] {
+                let n = an.length().floor() as usize + 1;
+                let (mut sum, mut lo, mut hi) = (glam::Vec3::ZERO, glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
+                for f in 0..n {
+                    let mut locals = pose::animated_locals(model, &an, (f as f32).min(an.length()));
+                    if !animated_root {
+                        for (k, l) in locals.iter_mut().enumerate() {
+                            if model.joints[k].parent < 0 {
+                                l.t = bind[k].t;
+                            }
+                        }
+                    }
+                    let p = to_rh(pose::world_matrices(model, &locals, Order::GAME)[j]).w_axis;
+                    let v = glam::Vec3::new(p.z, -p.x, p.y);
+                    sum += v;
+                    lo = lo.min(v);
+                    hi = hi.max(v);
+                }
+                let m = sum / n as f32;
+                eprintln!("  {} root, {n} frames: (fwd, right, up) mean ({:.2}, {:.2}, {:.2}) range fwd {:.2}..{:.2} right {:.2}..{:.2} up {:.2}..{:.2}", if animated_root { "animated" } else { "bind" }, m.x, m.y, m.z, lo.x, hi.x, lo.y, hi.y, lo.z, hi.z);
+            }
+            if std::env::var_os("PD_PROBE_ALL_JOINTS").is_some() {
+                let n = an.length().floor() as usize + 1;
+                let mut sums = vec![glam::Vec3::ZERO; model.joints.len()];
+                for f in 0..n {
+                    let locals = pose::animated_locals(model, &an, (f as f32).min(an.length()));
+                    for (k, w) in pose::world_matrices(model, &locals, Order::GAME).iter().enumerate() {
+                        let p = to_rh(*w).w_axis;
+                        sums[k] += glam::Vec3::new(p.z, -p.x, p.y) / n as f32;
+                    }
+                }
+                for (k, m) in sums.iter().enumerate() {
+                    let jt = &model.joints[k];
+                    eprintln!("    joint {k:>3} {:>8} parent {:>3} flags {:#06x} (fwd, right, up) ({:.2}, {:.2}, {:.2})", crate::alr::joint_name(jt.name).unwrap_or_default(), jt.parent, jt.flags, m.x, m.y, m.z);
+                }
+            }
+            let chain: Vec<String> = {
+                let mut v = Vec::new();
+                let mut k = j as i32;
+                while k >= 0 {
+                    let jt = &model.joints[k as usize];
+                    v.push(format!("{} t({:.2},{:.2},{:.2}) s({:.2},{:.2},{:.2})", crate::alr::joint_name(jt.name).unwrap_or_default(), jt.position[0], jt.position[1], jt.position[2], jt.scale[0], jt.scale[1], jt.scale[2]));
+                    k = jt.parent as i32;
+                }
+                v
+            };
+            eprintln!("  chain: {}", chain.join(" <- "));
+            let tracked: Vec<String> = an.tracks.iter().filter(|t| t.scale_key_count > 0).map(|t| format!("{}:{}", t.joint, t.scale_key_count)).collect();
+            eprintln!("  scale-keyed tracks: {tracked:?}; root tracks: {:?}", an.tracks.iter().filter(|t| model.joints.get(t.joint as usize).is_some_and(|jt| jt.parent < 0)).map(|t| (t.joint, t.translation.len(), t.rotation.len())).collect::<Vec<_>>());
         }
     }
 

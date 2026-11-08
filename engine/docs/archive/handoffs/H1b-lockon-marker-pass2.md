@@ -2,7 +2,7 @@
 
 **Goal:** Make the lock-on marker from 7519d14 faithful to Laurence's clip, and make it change colour by range.
 
-**What Claude Code found checking 7519d14 in the real game** (comparison: `engine/shots/lockon/verify_cmp.png`; footage frames: `engine/shots/lockon/marker_frames.png`; clip: `%USERPROFILE%\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4`, read-only):
+**What Claude Code found checking 7519d14 in the real game** (comparison: `engine/shots/lockon/verify_cmp.png`; footage frames: `engine/shots/lockon/marker_frames.png`; clip: `C:\Users\laure\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4`, read-only):
 1. Strokes are thin dotted outlines; the original's are thick, chunky, glowing lime strokes (see the fat "Y" icon in the clip).
 2. The crescent is a neat symmetric arc underneath; the original's is a large sweeping scythe-shaped arc curving off to the lower LEFT of the reticle.
 3. The marker floats above the head (`CHEST * 1.85`); in the clip it sits lower, on the target's body. Measure the right height from the clip.

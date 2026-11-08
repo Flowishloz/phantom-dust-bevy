@@ -21,7 +21,7 @@ method). OVERRIDE of LANE-BRIEF rule 3: you may edit `sim.rs`, `combat.rs`,
   line written reason each next to the table. The movement-only 1v1 golden
   must never change.
 - Every rule you build cites the program address it was read from, in a test.
-  Verify the audit's reads in `%USERPROFILE%\.pdtools\re-out\decomp_all.c`
+  Verify the audit's reads in `C:\Users\laure\.pdtools\re-out\decomp_all.c`
   first (capstone in a scratch venv for dropped args; no Ghidra) and report
   any audit claim you find wrong.
 - Runtime proof: scripted captures (`PD_SHOT_TICKS`, `--loadout`, `--near`,

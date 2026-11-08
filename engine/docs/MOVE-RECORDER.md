@@ -3,7 +3,7 @@
 Controlled, repeatable reference footage of single skills from the **original PC game** (Store
 version, `PDUWP.exe`), for the skill-by-skill accuracy pass (`audits/SKILL-BY-SKILL.md`).
 Code: `engine/re/move_recorder.py` (+ `save_guard.py`, one small patch to `live_trace.py`).
-One-click: `tools/bats/RECORD_ORIGINAL_MOVES.bat`. Outputs live in `%USERPROFILE%\.pdtools\moverec\`
+One-click: `tools/bats/RECORD_ORIGINAL_MOVES.bat`. Outputs live in `C:\Users\laure\.pdtools\moverec\`
 (never in git).
 
 **Status in one paragraph.** Built and proven live on the original: injected input (stick +
@@ -56,7 +56,7 @@ One breakpoint, once per program tick, is the "hook"; everything else happens in
 
 ## Feasibility results (phase 1)
 
-| | Result | Evidence (all under `%USERPROFILE%\.pdtools\moverec\`) |
+| | Result | Evidence (all under `C:\Users\laure\.pdtools\moverec\`) |
 |---|---|---|
 | (a) injected stick walks the fighter | **PASS** (log). Forward stick: run at **1.85 u/tick** (program says 1.852), state 1; idle when released. | `probe7.csv` runs; every take's `*_trace.csv` (Aura take: 1.85 u/tick for 100 ticks) |
 | (b) injected button casts slot X | **PASS** (log). Y press → state 10 (12 for the melee dash), `press` then `fire` events, cast sound, Aura spent, Blaster hit for 4. Press→fire ticks measured on the original: **Laser 13, Psycho Knife 18, Blaster 20, Speed Up 20, Aura Particle 0**. | `takes\*_trace.csv` |
@@ -140,7 +140,7 @@ Times are seconds, converted to 30 Hz ticks; events start after `lead_in`.
   at that plus `ms`/1000.
 - `<id>_<name>.json` — the setup, `placement_verified`, `capsule_touched`, notes (`unowned (memory deck)`),
   file names.
-- `%USERPROFILE%\.pdtools\moverec\owned_skills.csv` — id, game_index, name, count owned, capsule, school.
+- `C:\Users\laure\.pdtools\moverec\owned_skills.csv` — id, game_index, name, count owned, capsule, school.
   Laurence's account (read from game memory, nothing changed): **126 owned, 271 not owned** of the 397
   distinct skills in `skills.json` (the two dodge duplicates dropped).
 
@@ -161,7 +161,7 @@ Times are seconds, converted to 30 Hz ticks; events start after `lead_in`.
 
 ## Save safety
 
-- Backup of the package at the start of the lane: `%USERPROFILE%\.pdtools\original-save-backup-20261001`.
+- Backup of the package at the start of the lane: `C:\Users\laure\.pdtools\original-save-backup-20261001`.
 - **Starting the original rewrites two blobs and the container index** (container 55 → 57 → 58 → 59 …;
   blobs are enciphered, same sizes). Seen at every launch, before any input. No later write was
   seen from the match, injected input, slot changes or the Aura use (no battle was ever finished, so
@@ -174,7 +174,7 @@ Times are seconds, converted to 30 Hz ticks; events start after `lead_in`.
 
 ## The full unattended run (`tools/bats/RECORD_ALL_MOVES.bat`)
 
-- **List:** `%USERPROFILE%\.pdtools\moverec\all_skills.csv` (341 rows: the 340 roster skills + the Aura Particle) made by
+- **List:** `C:\Users\laure\.pdtools\moverec\all_skills.csv` (341 rows: the 340 roster skills + the Aura Particle) made by
   `python engine\re\mr_batch.py --make-list` from the usage order of `audits/SKILL-BY-SKILL.md` and `skills.json`. Columns:
   rank, id, name, family, distance, lock, tail, level, health, opponent_skill, opponent, flag. The **family plan** (`mr_batch.family_plan`):
   melee (punch / sword / pursuit) 35 u locked; shells 60; arc / lob / fall 70 and a 5 s tail; rain / tornado 70 and 7 s; crawl / hole 50
@@ -183,7 +183,7 @@ Times are seconds, converted to 30 Hz ticks; events start after `lead_in`.
   scripted". Level / health come from the skill's own requirement (kinds 1, 2, 8, 9; kind 5 "skills left" is flagged, not set up).
   Edit the CSV to change any row; a bare `id,name` list also works (generic script).
 - **Run:** double-click `tools/bats/RECORD_ALL_MOVES.bat` (or `python engine\re\move_recorder.py --list all_skills.csv --out
-  %USERPROFILE%\.pdtools\moverec\takes_full`). **Screen saver / blanking must be off** (it checks and waits up to 10 minutes).
+  C:\Users\laure\.pdtools\moverec\takes_full`). **Screen saver / blanking must be off** (it checks and waits up to 10 minutes).
   About 90 minutes: ~39 min of footage + ~9 s per take for the fresh match, plus relaunches.
 - **Watchdog:** the session ends when no game tick arrives for 25 s, a take passes its wall-clock limit, a match will not start, or the
   game process dies. The game this run started is closed, the save is restored from the pre-run snapshot and hash-checked
@@ -211,7 +211,7 @@ Times are seconds, converted to 30 Hz ticks; events start after `lead_in`.
 ## Trace-only full pass and the live audit (2026-10-01 evening)
 
 - **Trace-only run** (screen saver on, Laurence away): `python engine\re\move_recorder.py --list all_skills.csv --out
-  %USERPROFILE%\.pdtools\moverec\takes_full_trace --no-video`. The game needs no window for any of this; the screen-saver wait
+  C:\Users\laure\.pdtools\moverec\takes_full_trace --no-video`. The game needs no window for any of this; the screen-saver wait
   is skipped when there is no video. Same watchdog / resume / per-session save restore as the video run. The watchdog fires
   in practice (the game thread froze once in the first 8 takes: `STALL (no game tick for 25 s)`, relaunch, carried on).
 - **`full_trace_summary.csv`** (`mr_trace_summary.py`, written at the end of every run and runnable on any takes folder): one row per
@@ -270,7 +270,7 @@ Tool: `python engine\re\mr_auralog.py [--ticks 90] [--level 9] [--no-skip-take] 
 draw `0x14019b920`, silhouette `0x14019c3d0`, MFilter `0x140286c60`, GFilter2 `0x140287460`, weight table `0x1402864e0`, composite
 `0x140289140`, field set `0x140292d40`; float arguments are read from xmm registers, new in `live_trace.py`: `xmm0`..`xmm15`).
 Versus match, P0 at Level 9 (tier 3), P1 at Level 0, 90-120 program ticks logged, the game window filmed. Results in
-`%USERPROFILE%\.pdtools\moverec\auralog*\` (`summary.json`, `calls_*.json`, the master video). Game code was never changed on disk; the one
+`C:\Users\laure\.pdtools\moverec\auralog*\` (`summary.json`, `calls_*.json`, the master video). Game code was never changed on disk; the one
 experiment redirects the game thread at the call (a return from the draw) while the debugger is attached.
 
 - **LIVE: the halo does not come from `FUN_14019b920`.** In one take the draw ran normally for 60 ticks, then **every call of `FUN_14019b920`
@@ -319,7 +319,7 @@ Tool: `python engine\re\mr_aurahalo.py --segments "label:names@ticks,..." [--pre
 address, rax = 0; nothing changed on disk), `--pre` keeps a skip on from the boot, `-name` in a segment lifts a pre-skip, `--census` counts the callers of every draw
 primitive per segment. Seven live runs of 1 to 2 minutes each, the save restored by hash after every one (0 files differ from the pre-run snapshot; the game adds two
 new files to the container folder, which the guard never deletes). The measure is the school-colour excess round the fighter, `(R + B) / 2 - G > 25` (red, purple and
-green decks all work), plus a look at the frames (`%USERPROFILE%\.pdtools\moverec\aurahalo*\sheet*.png`). **Caveat that matters for every number below:** the halo
+green decks all work), plus a look at the frames (`C:\Users\laure\.pdtools\moverec\aurahalo*\sheet*.png`). **Caveat that matters for every number below:** the halo
 pulses by itself (strong for the first 2-4 s after the Level is raised, weaker later; the same unskipped take went 4190 -> 4350 -> ~900 px), so only
 pictures with the skip on while the halo is visibly strong count as "still there".
 

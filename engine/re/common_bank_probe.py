@@ -13,7 +13,7 @@ import hashlib
 import struct
 import sys
 
-BANK = ("<repo>"
+BANK = ("C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite"
         "/game_files/Assets/Data/Sound/common.bin")
 IDS = [24, 25, 28, 29, 30, 31, 32, 33, 34, 35]
 # material footstep table DAT_1402f6270 ids (FUN_140231010/1402311e0): one-line summary

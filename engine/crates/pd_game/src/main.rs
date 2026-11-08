@@ -641,6 +641,40 @@ fn load_shot_markers(cache: &std::path::Path) -> std::collections::HashMap<i16, 
         .collect()
 }
 
+/// Each side's BODY1 joint through every clip (`cache/chars/<id>.body1.json`, `pd_convert shotpoints`)
+/// for `Combat::set_body1_paths`: the program's collider point in the current pose (`combat/pose.rs`).
+/// A character without the file gets none and keeps the measured idle point (logged once here).
+fn load_body1_paths(cache: &std::path::Path, chars: &[String]) -> Vec<std::collections::HashMap<String, combat::Body1Clip>> {
+    let v3 = |a: &serde_json::Value| Vec3::new(a[0].as_f64().unwrap_or(0.0) as f32, a[1].as_f64().unwrap_or(0.0) as f32, a[2].as_f64().unwrap_or(0.0) as f32);
+    chars
+        .iter()
+        .map(|id| {
+            let path = cache.join("chars").join(format!("{id}.body1.json"));
+            let Some(v) = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok()) else {
+                eprintln!("[body1] no {} (pd_convert shotpoints): {id}'s collider point stays at the measured idle point", path.display());
+                return Default::default();
+            };
+            v["clips"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .map(|(name, c)| {
+                    let col = |k: &str| c[k].as_array().into_iter().flatten().map(v3).collect::<Vec<_>>();
+                    (name.clone(), combat::Body1Clip { bind: col("bind"), anim: col("anim") })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Which root column the collider point reads (`combat::Body1Root`): `bind` (the program's pinned root for every
+/// clip and its idle rows for standing / walking / running, READ `14025df50` / `FUN_14025b5e0`) unless the test
+/// switch `PD_BODY1_ROOT=standing|auto|anim` says otherwise (film A/B only; read once at
+/// match setup, never per tick).
+fn body1_root_rule() -> combat::Body1Root {
+    std::env::var("PD_BODY1_ROOT").map_or(combat::Body1Root::default(), |v| combat::Body1Root::parse(&v))
+}
+
 /// Each side's right hand through the attack clips (`cache/chars/<id>.hand.json`,
 /// `pd_convert shotpoints`) for `Combat::set_hand_paths`; a character without
 /// the file gets none (its melee stays centred on the body).
@@ -938,6 +972,7 @@ fn main() {
     combat.set_chain_rows(first, rows);
     combat.set_shot_markers(load_shot_markers(&cache));
     combat.set_hand_paths(load_hand_paths(&cache, &cli_chars));
+    combat.set_body1_paths(load_body1_paths(&cache, &cli_chars), body1_root_rule());
     combat.set_reaction_rows(load_reaction_rows(&cache.join("skills.json")));
     let rumble_tables = rumble::RumbleTables::load(&cache.join("skills.json"));
     if let Some(list) = opt("--loadout") {
@@ -1378,6 +1413,7 @@ fn enter_match(mut commands: Commands, assets: Res<AssetServer>, cfg: Res<Config
     combat.set_chain_rows(first, rows);
     combat.set_shot_markers(load_shot_markers(&cfg.cache));
     combat.set_hand_paths(load_hand_paths(&cfg.cache, &players.chars()));
+    combat.set_body1_paths(load_body1_paths(&cfg.cache, &players.chars()), body1_root_rule());
     combat.set_reaction_rows(load_reaction_rows(&cfg.cache.join("skills.json")));
     // The setup's rule, Level and hand, time limit, friendly fire and arsenal
     // kinds, all set explicitly (frontend/state.rs `apply_to_combat`).
@@ -3157,6 +3193,15 @@ fn film_setup(mut world: ResMut<World>, mut done: Local<bool>) {
     // test / knock-back reads where that body points (`Body::lock`). Unset = the old default (locked).
     if let Some(v) = std::env::var("PD_FILM_P1LOCK").ok() {
         m.players[1].locked = v.trim() != "0";
+    }
+    // `PD_FILM_SETTLED=1`: both fighters start in the settled idle WAIT1 (READ `FUN_14025b5e0`: an unlocked fighter
+    // standing 31 program ticks queues WAIT1IN, then loops WAIT1), as the takes' fighters do after the recorder's long
+    // set-up (MEASURED: the lock-on facing at every take's start points at P1's WAIT1 point); a locked one then plays
+    // WAIT1OUT back to WAIT0 like the program. Inert when unset (a match starts in WAIT0).
+    if std::env::var("PD_FILM_SETTLED").is_ok_and(|v| v.trim() == "1") {
+        for i in 0..2 {
+            m.combat.settle_idle(i);
+        }
     }
     // `PD_FILM_FIELD=<p0 Aura Particles>,<p1 Aura Particles>[,<p0 other capsules>,<p1 other capsules>]`: the capsules the ORIGINAL
     // take's stage held on each fighter's own spots when it started (the trace does not log the field; `film_compare.py` infers the

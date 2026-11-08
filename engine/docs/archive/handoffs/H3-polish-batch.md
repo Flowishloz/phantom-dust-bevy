@@ -3,7 +3,7 @@
 **Goal:** Five small, independent render-only polish jobs left over from the 2026-09-28 visual cycle. Do them in order; each is its own commit. Stop and report after each if something is unclear rather than guessing.
 
 **Rules for every job (read AGENTS.md first):**
-- Work in your OWN git worktree, never by switching branches in the shared folder: `git worktree add -b lane-h3 ..\pd-lane-h3 main` from `<repo>`, and a separate build dir (e.g. `%USERPROFILE%\.pdtools\target-h3`). `game_files/` and `engine/cache/` stay in the main folder — point tools at them read-only.
+- Work in your OWN git worktree, never by switching branches in the shared folder: `git worktree add -b lane-h3 ..\pd-lane-h3 main` from `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite`, and a separate build dir (e.g. `C:\Users\laure\.pdtools\target-h3`). `game_files/` and `engine/cache/` stay in the main folder — point tools at them read-only.
 - Render-only: never touch `sim.rs`, `combat.rs`, `moves/`, `arsenal.rs`.
 - Guesses are named constants marked "unconfirmed" in code + docs.
 - Proof = real-game screenshots (`pd_game --demo --near --screenshot <png> --shot-frame N`, `PD_SHOT_TICKS`, `PD_TEST_SPLIT=tb`; see `.claude/skills/pd-build-run` and `pd-visual-verify`) placed NEXT TO Laurence's footage frames. Look at every image; black or empty captures are not proof.
@@ -11,7 +11,7 @@
 
 ### Job 1 — School aura polish
 Files: `engine/crates/pd_game/src/school_aura.rs`, `school_aura.wgsl`, `GAME.md` "School aura", `VFX-AUDIT.md` item 6.
-Current: skinned shell glow (2ee203a), sheets in `engine/shots/schoolaura/v2/`. Footage: `engine/shots/schoolaura/v2/vs_footage_v2.png` (left panel), clip `%USERPROFILE%\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4`.
+Current: skinned shell glow (2ee203a), sheets in `engine/shots/schoolaura/v2/`. Footage: `engine/shots/schoolaura/v2/vs_footage_v2.png` (left panel), clip `C:\Users\laure\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4`.
 Fix: (a) softer, blurrier falloff like the footage (wider, lower-intensity outer band; the footage glow has no hard edge); (b) the spiky hair shows flat pink panels up close — fade the shell on thin/spiky geometry (e.g. by triangle area or view angle) or cap its brightness; (c) a limb crossing the body tints the body — reduce with depth-aware fade if cheap, else document. Use the `PD_AURA_*` overrides to make an A/B/C sheet next to the footage; ship the closest.
 
 ### Job 2 — Psycho Knife ray streaks

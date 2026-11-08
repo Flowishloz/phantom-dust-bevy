@@ -13,7 +13,7 @@ a pair sheet is built: the original's frames on top, ours below, a text strip of
 Hooks it uses (all env vars, inert otherwise; pd_game main.rs "Film comparison hooks"):
   PD_FILM, PD_FILM_DIST, PD_FILM_VIEW, PD_FILM_OPP, PD_FILM_LOG, plus PD_TEST_SPAWN / PD_TEST_PRESS /
   PD_SHOT_TICKS / PD_SFX_LOG / PD_MUTE and `--near --stage st06`.
-Outputs go to %USERPROFILE%\\.pdtools\\compare (never commit them).
+Outputs go to C:\\Users\\laure\\.pdtools\\compare (never commit them).
 """
 import argparse
 import csv
@@ -35,7 +35,7 @@ TAKES = os.path.join(MOVEREC, "takes_full")
 OUT = os.environ.get("PD_COMPARE_OUT") or os.path.join(HOME, ".pdtools", "compare")   # lanes running side by side set their own
 WORK = os.path.join(OUT, "_work")
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-MAIN = r"<repo>"
+MAIN = r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite"
 CACHE = os.environ.get("PD_FILM_CACHE") or os.path.join(MAIN, "engine", "cache")   # PD_FILM_CACHE: a scratch cache (collision A/B)
 EXE = os.environ.get("PD_GAME_EXE", os.path.join(ROOT, "target-lane", "debug", "pd_game.exe"))
 COUNTDOWN = 180            # our sim ticks before the fight starts (combat::COUNTDOWN_TICKS)
@@ -63,7 +63,11 @@ WINDOW = "1440x900"
 ORIG_STRIP = (0, 186, 720, 571)
 OURS_STRIP = (0, 0, 1440, 450)
 CROP = ORIG_STRIP            # kept for old callers: the original's P1 strip
-NOISE_SOUNDS = {"0.4", "0.30", "0.31", "0.26", "0.27"}   # 0.4 lock-on cue (the recorder toggles lock, we do not); 0.30/0.31 and 0.26/0.27 are FOOTSTEPS
+NOISE_SOUNDS = {"0.4", "0.30", "0.31", "0.26", "0.27",
+                "0.121", "0.122", "0.123", "0.124", "0.125", "0.126", "0.127", "0.128"}   # 0.4 lock-on cue (the recorder toggles lock, we do not); 0.30/0.31 and 0.26/0.27 are FOOTSTEPS
+# Round 9: common/121-128 are footsteps too -- the same table, st06's surface classes 26 (121/123) and 27 (125/127), +1 for the second foot
+# (READ DAT_1402f6270, FUN_140231010 / FUN_1402311e0; MEASURED: the "after-hit" 0.127/0.128 of takes 1, 7, 21, 47, 76, 131, 133, 247 are the
+# idle foot plant 52 ticks after a fighter's stun ends, 0.31 on class 5 / 0.27 on class 6 in the other 42 takes: SCORECARD-SOUND-1009 "Round 9 sound").
 # on two floor classes of the recorder's arena (READ: FUN_1402311e0 plays DAT_1402f6270[class*8 + col] + foot index; class 2/3/5 -> 28/30 -> 30/31,
 # class 4/6 -> 24/26 -> 26/27). The takes' walkers (the opponent stumbling, the confused, the knocked-up) step whatever the skill; the footstep
 # sound is Laurence-approved and protected (common 35 / wet 52, 54), so these are set aside here, not "fixed".
@@ -349,6 +353,8 @@ def run_ours_once(sc, lms, workdir, real=None):
         env["PD_FILM_VIEW"] = "1"
     if real and sc.get("p1lock") is not None and not os.environ.get("PD_COMPARE_NOP1LOCK"):
         env["PD_FILM_P1LOCK"] = str(sc["p1lock"])
+    if real and not os.environ.get("PD_COMPARE_NOSETTLED"):  # the takes' fighters stand long before the take: settled idle WAIT1
+        env["PD_FILM_SETTLED"] = "1"
     if real and sc.get("p0xyz"):
         a, b = sc["p0xyz"], sc["p1xyz"]
         (ax, az), (bx, bz) = to_sim_xz(a), to_sim_xz(b)

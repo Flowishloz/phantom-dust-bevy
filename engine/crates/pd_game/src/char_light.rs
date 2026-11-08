@@ -448,7 +448,7 @@ mod tests {
         assert_eq!(lut_alpha(0.5), 0.0);
         assert!(lut_alpha(0.99) > 0.6);
         // File check (skipped without the game files).
-        let p = Path::new(r"..\..\..\game_files\Assets\Data\spec77.dds");
+        let p = Path::new(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\spec77.dds");
         if let Ok(b) = std::fs::read(p) {
             for row in 0..256usize {
                 let px = &b[128 + row * 256 * 4..][..4];

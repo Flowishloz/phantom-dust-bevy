@@ -147,7 +147,7 @@ class Los(unittest.TestCase):
         self.assertTrue(C.segments_cross_xz((0, 0, 0), (0, 0, 10), (0, 0, 10), (5, 0, 10)))   # touching counts
 
 
-REAL = r"../../../game_files/Assets/Data/com/st%s/comdata0.cad"
+REAL = r"C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/Assets/Data/com/st%s/comdata0.cad"
 
 
 class RealFiles(unittest.TestCase):

@@ -26,8 +26,9 @@
 //! (`Match::prophunt == None`, every other mode) runs exactly as before: the only change to `Combat` is the
 //! `rounds_by_mode` flag (default off) that hands round endings to this module.
 
-use crate::combat::{Action, Combat, CombatEvent, AURA_TICKS_PER_POINT, COUNTDOWN_TICKS, MAX_PLAYERS, SLOTS};
+use crate::combat::{Action, Combat, CombatEvent, AURA_TICKS_PER_POINT, COUNTDOWN_TICKS, MAX_PLAYERS, MELEE_DASH_RANGE, SLOTS};
 use crate::sim::{Input, Player, HZ};
+use glam::Vec2;
 
 /// Psycho Knife (`skills.json` id 3, the same id `frontend::modes::skill::PSYCHO_KNIFE` names).
 pub const PSYCHO_KNIFE: i16 = 3;
@@ -40,8 +41,13 @@ pub const SEEKER_HEALTH: i32 = 20;
 /// The seeker's Level (Aura limit). "Infinite mana" is the Aura refilled to this every tick, so it only has to cover
 /// the knife's cost; 10 is the highest Level of the Standard rule. UNCONFIRMED value (any cost-covering Level plays the same).
 pub const SEEKER_LEVEL: i32 = 10;
-/// The hiders' head start: 20 s (Laurence 2026-10-08, "change hider hiding time to 20 seconds"; was 12).
-pub const SEEKER_COUNTDOWN_TICKS: u32 = 20 * HZ as u32;
+/// The hiders' head start: 30 s (Laurence 2026-10-10, "30 seconds to hide"; was 20 on 2026-10-08, 12 before).
+pub const SEEKER_COUNTDOWN_TICKS: u32 = 30 * HZ as u32;
+/// Slight homing on moving hiders (Laurence 2026-10-10): a hider counts as moving above this ground speed, units a
+/// second (a walk is 20.8, a run 55.6). UNCONFIRMED value.
+pub const HOMING_MIN_SPEED: f32 = 12.0;
+/// ... and the knife only homes on one within this angle either side of where the seeker's camera points. UNCONFIRMED.
+pub const HOMING_CONE_DEG: f32 = 50.0;
 /// How long a hider's line says "nothing in reach" after a disguise press found no object.
 pub const NOTHING_IN_REACH_TICKS: u16 = 90;
 /// "First to get 5 kills wins": the default of the setup's KILLS TO WIN row (Laurence 2026-10-08: "make the kills to win
@@ -185,7 +191,7 @@ impl PropHunt {
     }
 
     /// The next round: the next seeker, fresh fighters (the knife on the seeker's X, nothing for the hiders), no
-    /// disguises. The sim's own 3-2-1 countdown is skipped: the seeker's 20 s countdown is this round's start.
+    /// disguises. The sim's own 3-2-1 countdown is skipped: the seeker's 30 s countdown is this round's start.
     fn begin_round(&mut self, combat: &mut Combat) {
         self.round += 1;
         self.seeker = seeker_for(self.round, &self.active);
@@ -314,6 +320,15 @@ impl PropHunt {
                 // Only the knife, and only while there are attempts and Health left.
                 let can_knife = self.knives_left > 0 && combat.fighters[i].health > 0;
                 inp.skills &= if can_knife { X_BUTTON } else { 0 };
+                // Slight homing on moving hiders (Laurence 2026-10-10): lock-on is off, so a swing only reaches what
+                // is already in front of the blade. A knife thrown at a hider who is running in front of the seeker
+                // takes the lock-on dash at them for this one cast (see `homing_target`).
+                if can_knife && pressed & X_BUTTON != 0 && combat.fighters[i].action == Action::Ready {
+                    if let Some(h) = self.homing_target(i, combat, players) {
+                        players[i].locked = true;
+                        players[i].target = Some(h);
+                    }
+                }
                 continue;
             }
             // A hider: never casts (the buttons are theirs).
@@ -348,6 +363,28 @@ impl PropHunt {
             }
         }
         out
+    }
+
+    /// The hider the seeker's knife homes on this press, if any: the nearest uncaught hider who is moving (not frozen,
+    /// at least `HOMING_MIN_SPEED` over the last tick), inside the knife's dash range and within `HOMING_CONE_DEG` of
+    /// where the seeker's camera points. A hider standing still, frozen or behind the seeker gets no help, so a good
+    /// hiding place still works; a running one is chased by the same dash a locked-on knife has (it steers at the
+    /// target a little each tick, then the blade tests as usual).
+    fn homing_target(&self, seeker: usize, combat: &Combat, players: &[Player]) -> Option<usize> {
+        let me = &players[seeker];
+        let facing = Vec2::new(me.cam_yaw.sin(), me.cam_yaw.cos());
+        self.hider_slots()
+            .filter(|&h| !self.hiders[h].caught && self.hiders[h].frozen.is_none() && combat.valid_target(seeker, h))
+            .filter_map(|h| {
+                let p = &players[h];
+                let speed = Vec2::new(p.pos.x - p.prev_pos.x, p.pos.z - p.prev_pos.z).length() * HZ as f32;
+                let to = Vec2::new(p.pos.x - me.pos.x, p.pos.z - me.pos.z);
+                let d = to.length();
+                let in_cone = d < 1e-3 || facing.dot(to / d) >= HOMING_CONE_DEG.to_radians().cos();
+                (speed >= HOMING_MIN_SPEED && d <= MELEE_DASH_RANGE && in_cone).then_some((h, d))
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(h, _)| h)
     }
 
     /// After the tick: pay for knife casts, catch the hiders the knife hit, hold frozen hiders, keep the hiders'
@@ -508,7 +545,7 @@ mod tests {
 
     fn skip_countdown(m: &mut Match, col: &mut pd_formats::collision::Collision) {
         idle(m, col, SEEKER_COUNTDOWN_TICKS);
-        assert!(ph(m).hunting(), "released after 20 s");
+        assert!(ph(m).hunting(), "released after 30 s");
     }
 
     fn press(slot: usize, buttons: u8) -> [Input; MAX_PLAYERS] {
@@ -827,6 +864,48 @@ mod tests {
         assert!(ph(&m).decided());
         assert_eq!(ph(&m).winner(), Some(1));
         assert_eq!(ph(&m).places()[..3], [2, 1, 3]);
+    }
+
+    #[test]
+    fn the_knife_homes_on_a_moving_hider_in_front_but_not_on_one_standing_still() {
+        // Seeker 0 at the origin looking along +Z (camera yaw 0); hider 1 close in front.
+        let setup = |hider_at: Vec3, speed_per_tick: f32| {
+            let (mut m, mut col) = game(2, Vec::new(), quick());
+            skip_countdown(&mut m, &mut col);
+            m.players[0].pos = Vec3::ZERO;
+            m.players[0].cam_yaw = 0.0;
+            m.players[1].pos = hider_at;
+            m.players[1].prev_pos = hider_at - Vec3::new(0.0, 0.0, speed_per_tick);
+            m
+        };
+        let press_x = |m: &mut Match| {
+            m.prophunt.as_mut().unwrap().filter_inputs(&press(0, X_BUTTON), &mut m.combat, &mut m.players);
+        };
+        // A runner 60 u ahead: the cast locks on to them.
+        let mut m = setup(Vec3::new(0.0, 0.0, 60.0), 0.9);
+        press_x(&mut m);
+        assert!(m.players[0].locked && m.players[0].target == Some(1));
+        // Standing still, a walk's worth too slow: no help.
+        for v in [0.0, 0.1] {
+            let mut m = setup(Vec3::new(0.0, 0.0, 60.0), v);
+            press_x(&mut m);
+            assert!(!m.players[0].locked, "speed {v}/tick is not moving");
+        }
+        // Too far, or behind the seeker, or off to the side: no help.
+        for at in [Vec3::new(0.0, 0.0, 120.0), Vec3::new(0.0, 0.0, -60.0), Vec3::new(60.0, 0.0, 10.0)] {
+            let mut m = setup(at, 0.9);
+            press_x(&mut m);
+            assert!(!m.players[0].locked, "{at:?}");
+        }
+        // A frozen or caught hider gets none either.
+        let mut m = setup(Vec3::new(0.0, 0.0, 60.0), 0.9);
+        m.prophunt.as_mut().unwrap().hiders[1].frozen = Some(Frozen { x: 0.0, z: 60.0, yaw: 0.0 });
+        press_x(&mut m);
+        assert!(!m.players[0].locked);
+        // Nothing without a press (the knife isn't being thrown).
+        let mut m = setup(Vec3::new(0.0, 0.0, 60.0), 0.9);
+        m.prophunt.as_mut().unwrap().filter_inputs(&[Input::default(); MAX_PLAYERS], &mut m.combat, &mut m.players);
+        assert!(!m.players[0].locked);
     }
 
     #[test]

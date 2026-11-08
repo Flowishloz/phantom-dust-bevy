@@ -95,7 +95,7 @@ mod tests {
     fn effect_dir() -> Option<PathBuf> {
         // Real game data (never committed, and not in this lane's worktree):
         // the main checkout's game_files, or PD_GAME_FILES for another layout.
-        let p = std::env::var_os("PD_GAME_FILES").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"..\..\..\game_files\Assets\Data\Effect"));
+        let p = std::env::var_os("PD_GAME_FILES").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Effect"));
         p.join("e.i").exists().then_some(p)
     }
 

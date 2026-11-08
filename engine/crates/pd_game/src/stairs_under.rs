@@ -11,8 +11,9 @@
 //! (st03 / st13 / st23: x -113..-87 and +87..+113, z -233..-125, y 50 -> 109) is a thin
 //! slab on the render: the underside is open air, you see the hall floor and the far wall
 //! through it. The program's 0x94 collision has the slab's soffit (an underside, a
-//! ceiling) PLUS three class-0x12 walls that fill the wedge between soffit and floor on
-//! the open side: a side wall along the soffit's open edge and an end wall at z -204.6.
+//! ceiling) PLUS four class-0x12 walls that fill the wedge between soffit and floor: a
+//! side wall along each of the soffit's long edges and an end wall at z -204.6 (two
+//! triangles). The flights stand free in the hall: there is open floor on BOTH sides.
 //! No render triangle is at any of them (checked against the render mesh: the only things
 //! under the soffit are the soffit itself and the floor). A body walking in meets an
 //! invisible wall; shots stop on it; and the battle camera's wall pull-in (it ray-casts
@@ -20,17 +21,20 @@
 //! the near-wall dissolve fades him: the "thick hitbox that obscures the player".
 //!
 //! **What changes (load-time filter on the stage `.pdcl`, no cache regeneration).** Per
-//! flight, the open-side wall and the end wall are removed and replaced by the part of
+//! flight, both side walls and the end wall are removed and replaced by the part of
 //! them that is really needed: the pocket where the soffit is lower than a fighter's head
 //! (`sim::BODY_HEIGHT`, the tallest character). There the slab itself is in the way (a body
-//! would stand inside it), so a side wall (the removed wall's own lower-left triangle)
-//! and a cross wall stay. The cross wall stands one wall radius deeper than the head line,
+//! would stand inside it), so the two side walls (each cut to the head line) and a cross
+//! wall stay. The cross wall stands one wall radius deeper than the head line,
 //! because walls hold a body's centre that far off: a body walking in from the hall stops
 //! with its head just under the soffit (Laurence 2026-10-07: the first cut, a wall at 22 u of
-//! soffit, stopped him with a visible gap of about 5 u over his head). The outer side (against the hall's own
-//! wall, where the render has a wall too), the soffit, the ramp (the walkable stairs)
-//! and the handrail hulls are untouched. A file that does not contain exactly the
-//! expected triangles is left as it is.
+//! soffit, stopped him with a visible gap of about 5 u over his head). The second cut kept
+//! the outer side's wall whole, taking it for the hall's own wall; it is not (the hall floor
+//! runs on past it, and the render has nothing there but the stair's own side), so walking
+//! across under a flight still met an invisible wall (Laurence 2026-10-15: "the invisible
+//! walls follow the sides of the stairs"). The soffit, the ramp (the walkable stairs) and
+//! the handrail hulls are untouched. A file that does not contain exactly the expected
+//! triangles is left as it is.
 
 use glam::Vec3;
 use pd_formats::collision::{Collision, RawCollision, NO_OBJECT};
@@ -50,9 +54,9 @@ const STAGES: [&str; 3] = ["st03", "st13", "st23"];
 /// One flight's wedge. Numbers are read from the stage file (`st03.pdcl`, stage triangles
 /// 506/507/541/747 west, 2042/2089/2255/2256 east; export space: right-handed, z mirrored).
 struct Flight {
-    /// x of the open side's wall (faces the hall); removed, then re-cut.
+    /// x of the inner side's wall (faces the hall's centre); removed, then re-cut.
     open_x: f32,
-    /// x of the outer side (the hall's own wall: kept).
+    /// x of the outer side's wall (faces the hall's side wing); removed, then re-cut.
     outer_x: f32,
     /// z where the soffit meets the floor (the low end), and where the end wall stands.
     z_low: f32,
@@ -93,8 +97,8 @@ pub(crate) fn load(bytes: &[u8], stage: &str) -> Collision {
     Collision::from_raw(raw)
 }
 
-/// Is stage triangle `t` one of `f`'s wedge walls: class 0x12, stage-owned, vertical, on the
-/// open side's plane or the end plane, and inside the wedge?
+/// Is stage triangle `t` one of `f`'s wedge walls: class 0x12, stage-owned, vertical, on
+/// either side's plane or the end plane, and inside the wedge?
 fn wedge_wall(f: &Flight, t: &[Vec3; 3], owner: u32, class: u8) -> bool {
     if owner != NO_OBJECT || class != WALL_CLASS {
         return false;
@@ -108,9 +112,9 @@ fn wedge_wall(f: &Flight, t: &[Vec3; 3], owner: u32, class: u8) -> bool {
     if !inside {
         return false;
     }
-    let on_open_side = t.iter().all(|v| (v.x - f.open_x).abs() < EPS);
+    let on_side = [f.open_x, f.outer_x].iter().any(|&x| t.iter().all(|v| (v.x - x).abs() < EPS));
     let on_end = t.iter().all(|v| (v.z - f.z_end).abs() < EPS);
-    on_open_side || on_end
+    on_side || on_end
 }
 
 /// The z at which the soffit is `h` above the floor.
@@ -135,13 +139,13 @@ fn cross_z(f: &Flight) -> f32 {
 }
 
 /// Open the invisible wedge under each flight of `stage` (no-op for other stages, and for a
-/// file that does not hold exactly three wedge walls per flight). Returns what changed.
+/// file that does not hold exactly four wedge walls per flight). Returns what changed.
 pub(crate) fn apply(raw: &mut RawCollision, stage: &str) -> Option<Edit> {
     if !STAGES.contains(&stage) {
         return None;
     }
     let counts: Vec<usize> = FLIGHTS.iter().map(|f| (0..raw.tris.len()).filter(|&i| wedge_wall(f, &raw.tris[i], raw.owner(i), raw.class(i))).count()).collect();
-    if counts.iter().any(|&c| c != 3) {
+    if counts.iter().any(|&c| c != 4) {
         return None;
     }
     let removed = raw.retain(|_, t, owner, class| !FLIGHTS.iter().any(|f| wedge_wall(f, t, owner, class)));
@@ -150,13 +154,15 @@ pub(crate) fn apply(raw: &mut RawCollision, stage: &str) -> Option<Edit> {
         let (zs, ys) = (head_z(f), f.y_floor + HEAD_HEIGHT);
         let (zc, yc) = (cross_z(f), f.y_floor + soffit_height(f, cross_z(f)));
         let v = |x: f32, y: f32, z: f32| Vec3::new(x, y, z);
-        // The open side's wall, cut to the head line (the removed triangle's own corner): a body
-        // coming in from the side is held a wall radius outside the slab's edge.
-        raw.push([v(f.open_x, f.y_floor, f.z_low), v(f.open_x, f.y_floor, zs), v(f.open_x, ys, zs)], NO_OBJECT, WALL_CLASS);
+        // Each side's wall, cut to the head line (the removed triangle's own corner): a body
+        // coming in from either side is held a wall radius outside the slab's edge.
+        for x in [f.open_x, f.outer_x] {
+            raw.push([v(x, f.y_floor, f.z_low), v(x, f.y_floor, zs), v(x, ys, zs)], NO_OBJECT, WALL_CLASS);
+        }
         // The cross wall, floor to soffit, across the flight.
         raw.push([v(f.open_x, f.y_floor, zc), v(f.outer_x, f.y_floor, zc), v(f.outer_x, yc, zc)], NO_OBJECT, WALL_CLASS);
         raw.push([v(f.open_x, f.y_floor, zc), v(f.outer_x, yc, zc), v(f.open_x, yc, zc)], NO_OBJECT, WALL_CLASS);
-        added += 3;
+        added += 4;
     }
     Some(Edit { removed, added })
 }
@@ -221,11 +227,11 @@ fn walk_at(col: &mut Collision, start: Vec3, yaw: f32, stick_y: f32, ticks: usiz
         };
         for f in &FLIGHTS {
             let n = (0..raw.tris.len()).filter(|&i| wedge_wall(f, &raw.tris[i], raw.owner(i), raw.class(i))).count();
-            assert_eq!(n, 3, "flight at open_x {}: two end-wall triangles and the open-side wall", f.open_x);
+            assert_eq!(n, 4, "flight at open_x {}: two end-wall triangles and the two side walls", f.open_x);
         }
     }
 
-    /// `apply` removes 6 triangles, adds 6, only on the Palace family, and only once.
+    /// `apply` removes 8 triangles, adds 8, only on the Palace family, and only once.
     #[test]
     fn apply_edits_only_the_palace_family_and_only_once() {
         let Some(base) = raw() else { return };
@@ -234,7 +240,7 @@ fn walk_at(col: &mut Collision, start: Vec3, yaw: f32, stick_y: f32, ticks: usiz
         assert_eq!(other.tris.len(), base.tris.len());
         for stage in STAGES {
             let mut r = base.clone();
-            assert_eq!(apply(&mut r, stage), Some(Edit { removed: 6, added: 6 }));
+            assert_eq!(apply(&mut r, stage), Some(Edit { removed: 8, added: 8 }));
             assert_eq!(r.tris.len(), base.tris.len());
             assert_eq!(r.owners.len(), r.tris.len());
             assert_eq!(r.classes.len(), r.tris.len());
@@ -244,8 +250,8 @@ fn walk_at(col: &mut Collision, start: Vec3, yaw: f32, stick_y: f32, ticks: usiz
     }
 
     /// The pocket (headroom under a fighter's height) keeps its walls, the rest opens: a body
-    /// walks in from the hall under the flight where the soffit is high enough, and stops at the
-    /// headroom line; in the original it stopped at the open edge of the flight.
+    /// walks across under the flight where the soffit is high enough, in one side and out the
+    /// other, both ways; in the original it stopped at the flight's edge.
     #[test]
     fn a_body_can_walk_under_the_flight_where_there_is_headroom() {
         let Some(base) = raw() else { return };
@@ -261,9 +267,15 @@ fn walk_at(col: &mut Collision, start: Vec3, yaw: f32, stick_y: f32, ticks: usiz
             eprintln!("{name}: original ends x {:.1}, opened ends x {:.1}", old_end.x, new_end.x);
             // Original: stopped by the invisible wall on the open edge (the wall at |x| 86.7 / 87.2 less the body radius 5).
             assert!(old_end.x.abs() < 84.0 && old_end.x.abs() > 80.0, "{name}: original stops at the open edge, x {}", old_end.x);
-            // Opened: it walks under, up to the hall's own wall on the far side (|x| 112.7 / 113.2 less the body radius).
-            assert!(new_end.x.abs() > 100.0, "{name}: walks under the slab, x {}", new_end.x);
+            // Opened: it walks under and out past the outer side (|x| 112.7 / 113.2) onto the hall floor beyond.
+            assert!(new_end.x.abs() > 125.0, "{name}: walks across under the slab, x {}", new_end.x);
             assert!(new_path.iter().all(|p| p.y < 51.0), "{name}: stays on the hall floor");
+            // And back the other way, from the outer wing in toward the hall's centre.
+            let back = walk(&mut new_col, Vec3::new(x0.signum() * 150.0, 50.0, z), -yaw, 220);
+            let back_end = *back.last().unwrap();
+            eprintln!("{name}: from the outer side ends x {:.1}", back_end.x);
+            assert!(back_end.x.abs() < 80.0, "{name}: walks across from the outer side, x {}", back_end.x);
+            assert!(back.iter().all(|p| p.y < 51.0), "{name}: stays on the hall floor");
         }
     }
 
@@ -278,6 +290,9 @@ fn walk_at(col: &mut Collision, start: Vec3, yaw: f32, stick_y: f32, ticks: usiz
         for z in [-155.0f32, -165.0, -175.0, -181.0] {
             let end = *walk(&mut col, Vec3::new(-60.0, 50.0, z), -std::f32::consts::FRAC_PI_2, 160).last().unwrap();
             assert!(end.x > -85.0, "z {z}: the headroom-short pocket is closed, x {}", end.x);
+            // From the outer side too.
+            let end = *walk(&mut col, Vec3::new(-150.0, 50.0, z), std::f32::consts::FRAC_PI_2, 160).last().unwrap();
+            assert!(end.x < -114.0, "z {z}: the pocket is closed from the outer side, x {}", end.x);
         }
         // Past the head line the flight is open.
         let end = *walk(&mut col, Vec3::new(-60.0, 50.0, -192.0), -std::f32::consts::FRAC_PI_2, 160).last().unwrap();

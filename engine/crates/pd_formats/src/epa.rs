@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn shipped_file_matches_the_audit() {
-        let p = std::env::var_os("PD_GAME_FILES_COM").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"..\..\..\game_files\Assets\Data\com"));
+        let p = std::env::var_os("PD_GAME_FILES_COM").map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\com"));
         let Ok(d) = std::fs::read(p.join("param/enemyparam.epa")) else {
             eprintln!("no game_files: epa test skipped");
             return;

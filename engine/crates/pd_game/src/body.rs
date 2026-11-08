@@ -84,6 +84,10 @@ impl Body {
 /// fitted over the recorded takes (the lock-on facing of a fighter standing still points at this point:
 /// 265 takes for pc01a, 0.58 deg RMS, median 0.11; 43 takes with pc00a as the target, 0.10 deg RMS).
 /// Other characters: not measured (need their takes or the BODY1 bone through the idle clip), so 0.
+/// Round 10 (READ `14025df50`, `FUN_14025b5e0`): pc01a's value is its settled idle WAIT1 with the root pinned
+/// (`body1.json` `bind`: (-2.8, -2.05)); a locked fighter is held in WAIT0 (about (0, 0)), so pc00a's fit (43 takes
+/// of a locked-on P0) is not one pose. Standing / walking / running now read the clip (`combat/pose.rs`); this
+/// stays the fallback for pivots, jumps, dodges, guard casts and a fighter with no BODY1 table.
 fn lock_offset(model: &str) -> (f32, f32) {
     match model {
         "pc00a" => (-1.96, -0.50),
@@ -99,8 +103,8 @@ fn lock_offset(model: &str) -> (f32, f32) {
 /// Checked against the film: `309_Piece_of_Wind` (pc01a the target) clears the class-27 box top and lands
 /// 23 program ticks after the fire on class 6 like the original only with a target point at least ~9.7 u up
 /// (the fire matrix pitch, `moves::Launch::pitch`); 9 (our old body centre) clips the box at tick 13.
-/// UNCONFIRMED: the same FK does not reproduce the MEASURED x / z offset (`lock_offset`), so the bone's world
-/// matrix has a factor we do not read; a vertical part of it would move these heights. Other models (the
+/// Round 10: the x / z gap to `lock_offset` was the pinned root (READ `14025df50`) and the idle row (WAIT1, not
+/// WAIT0), not a factor of the bone matrix; the root track stores no y, so these heights stand. Other models (the
 /// enemy rows): the charaset centre height 9.
 fn point_height(model: &str) -> f32 {
     match model {

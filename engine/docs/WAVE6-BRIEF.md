@@ -7,8 +7,8 @@ harness), `engine/docs/METHOD-FIDELITY.md` (the method) and, for sim work,
 ## Laurence's standing rules
 
 - **No guessed values.** Tag every value you ship:
-  - READ: a program address, from `%USERPROFILE%\.pdtools\re-out\decomp_all.c` (image base 0x140000000; helpers in `engine/re/`; no Ghidra; capstone in a scratch venv is OK).
-  - MEASURED: from footage, `%USERPROFILE%\Pictures\Phantom Dust - *`.
+  - READ: a program address, from `C:\Users\laure\.pdtools\re-out\decomp_all.c` (image base 0x140000000; helpers in `engine/re/`; no Ghidra; capstone in a scratch venv is OK).
+  - MEASURED: from footage, `C:\Users\laure\Pictures\Phantom Dust - *`.
   - LIVE: from a trace of the PC original (`engine/re/live_trace.py`, `engine/re/move_recorder.py`; see `MOVE-RECORDER.md`).
   - Anything else is UNCONFIRMED: say so, and don't fill the gap with a pick.
 - Scope is **versus only** (no story mode).
@@ -16,11 +16,11 @@ harness), `engine/docs/METHOD-FIDELITY.md` (the method) and, for sim work,
 
 ## Mechanics
 
-- Your worktree is `<repo>\lanes\<name>` on branch `lane/<name>` (the orchestrator gives the base commit). `engine\cache` there is a junction to the main cache: never delete through it.
+- Your worktree is `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\lanes\<name>` on branch `lane/<name>` (the orchestrator gives the base commit). `engine\cache` there is a junction to the main cache: never delete through it.
 - Build in your own target folder: run `. .\engine\env.ps1`, then set `$env:CARGO_TARGET_DIR` to `<worktree>\target-lane`.
 - Edit only inside your fence. Shared edits must be MINIMAL and ADDITIVE, and listed in your report.
 - If you change the sim, re-record only the replay goldens that move, each with a written reason. The movement-only golden never changes.
-- Runtime proof: scripted captures go to the MAIN checkout `<repo>\engine\shots\` with your lane prefix. Look at them yourself. Use the absolute cache path `..\..\cache`, because a relative path resolves from the exe folder.
+- Runtime proof: scripted captures go to the MAIN checkout `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\shots\` with your lane prefix. Look at them yourself. Use the absolute cache path `C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\cache`, because a relative path resolves from the exe folder.
 - If you change a converter, regenerate into your own worktree only, and put the exact command in your report.
 - Finish:
   1. `git merge main`.

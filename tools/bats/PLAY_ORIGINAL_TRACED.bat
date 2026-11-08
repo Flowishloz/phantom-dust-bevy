@@ -3,7 +3,7 @@ rem Play the ORIGINAL Phantom Dust (Store version) while a recorder logs every s
 rem plays, every capsule capture and every capsule erase. Double-click to use.
 rem The recorder only watches; it sends nothing to the game. Closing this window (or
 rem Ctrl+C) puts everything back and lets go of the game, which keeps running.
-rem Log files go to %USERPROFILE%\.pdtools\trace\ (outside the project).
+rem Log files go to C:\Users\laure\.pdtools\trace\ (outside the project).
 title Phantom Dust recorder - close this window when you are done
 cd /d "%~dp0..\.."
 set "SYS=%SystemRoot%\System32"
@@ -38,5 +38,5 @@ echo ==================================================================
 echo.
 python "%~dp0..\..\engine\re\live_trace.py" --bp 0x140276330:sound --bp 0x140261a00:capture --bp 0x14014fd10:erase --summary
 echo.
-echo Recorder stopped. The log is in %USERPROFILE%\.pdtools\trace\
+echo Recorder stopped. The log is in C:\Users\laure\.pdtools\trace\
 pause

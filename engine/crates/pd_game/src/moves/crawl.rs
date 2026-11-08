@@ -20,8 +20,9 @@
 //!   it ends at a wall or when its range runs out.
 
 use super::{life_ticks, ramp, Flight, Launch, Shot, DEG, GRAVITY_TICK, SPEED_UNIT};
+#[cfg(test)]
+use super::SHOT_RADIUS;
 use crate::combat::SkillDef;
-use crate::sim::STEP_HEIGHT;
 use glam::Vec3;
 use pd_formats::collision::Collision;
 
@@ -55,7 +56,11 @@ impl Crawl {
 
     pub fn launch(&self, def: &SkillDef, l: &Launch) -> Vec<Shot> {
         let f = Flying { fwd: l.facing, speed: self.speed, end_speed: self.end_speed, ramp: self.ramp, accel: self.accel, cap: self.cap, rate: 0.0, vy: 0.0 };
-        vec![Shot::new(def, l.feet + Vec3::Y, Flight::Crawl(f), self.life)]
+        // READ `FUN_140266060`: the object's matrix is rebuilt from the fire matrix's forward row flattened to the
+        // ground, up = +Y, translation = the object's own `+0x68` (= the fire matrix's point: the cast effect's
+        // SHOTnn marker, e.g. (0, 3, 10) for Root of Tree, or the hand). Its first step's floor probe lifts it to
+        // its ride height (`Flying::step`); from higher up it falls first.
+        vec![Shot::new(def, l.spawn, Flight::Crawl(f), self.life)]
     }
 }
 
@@ -86,15 +91,18 @@ fn wrap(a: f32) -> f32 {
 }
 
 impl Flying {
-    /// `FUN_140266290`: move at the ramped speed (and fall by `vy`), find the
-    /// floor; on it, steer with an accelerating turn and stop falling.
-    pub fn step(&mut self, pos: &mut Vec3, age: u16, target: Option<Vec3>, homing: f32, away: bool, col: &Collision) -> bool {
+    /// `FUN_140266290`: move at the ramped speed (and fall by `vy`), then the
+    /// floor probe `FUN_140163cb0(centre, radius)` with the object's own radius
+    /// `+0x190` (5, `SHOT_RADIUS`): a floor face the sphere touches pushes the
+    /// centre out to `radius` above it (`FUN_140195f30`), so a crawler rides
+    /// with its centre 5 u over the floor (READ; ours used to ride 1 u over it).
+    /// On the floor it steers with an accelerating turn and stops falling.
+    #[allow(clippy::too_many_arguments)]
+    pub fn step(&mut self, pos: &mut Vec3, radius: f32, age: u16, target: Option<Vec3>, homing: f32, away: bool, col: &Collision) -> bool {
         *pos += Vec3::Y * self.vy + self.fwd * ramp(self.speed, self.end_speed, self.ramp, age);
-        let floor = col.ground_below_object(pos.x, pos.z, pos.y + STEP_HEIGHT).filter(|g| pos.y - g <= STEP_HEIGHT);
-        match floor {
-            None => self.vy -= GRAVITY_TICK,
-            Some(g) => {
-                pos.y = g + 1.0;
+        match col.object_sphere_floor(pos, radius) {
+            false => self.vy -= GRAVITY_TICK,
+            true => {
                 if let Some(t) = target {
                     let (mut to, mut accel) = (Vec3::new(t.x - pos.x, 0.0, t.z - pos.z), self.accel * homing);
                     if away {
@@ -137,9 +145,47 @@ mod tests {
         d
     }
 
+    /// From Root of Tree's SHOT01 marker height (0, 3, 10): 3 u over the floor.
     fn launch(d: &SkillDef) -> Shot {
-        let l = Launch { spawn: Vec3::new(0.0, 12.0, 0.0), feet: Vec3::ZERO, pitch: 0.0, facing: Vec3::Z, target: None, index: 0, col: None, marks: &[] };
+        launch_at(d, Vec3::new(0.0, 3.0, 0.0))
+    }
+
+    fn launch_at(d: &SkillDef, spawn: Vec3) -> Shot {
+        let l = Launch { spawn, feet: Vec3::ZERO, pitch: 0.0, facing: Vec3::Z, target: None, index: 0, col: None, marks: &[] };
         Crawl::from_def(d).launch(d, &l).remove(0)
+    }
+
+    /// READ `FUN_140266290` -> `FUN_140163cb0(centre, +0x190 = 5)` -> `FUN_140195f30`: the floor pushes the
+    /// sphere's centre out to 5 u, so the crawler rides 5 u over the floor from its first step; from the hand
+    /// (higher than 5 u) it falls at 0.12 u a tick squared first, without steering.
+    #[test]
+    fn it_rides_its_radius_over_the_floor() {
+        let col = floor();
+        let mut s = launch(&root());
+        for _ in 0..5 {
+            s.step(Some(Vec3::new(0.0, 9.0, 400.0)), &col);
+            assert!((s.pos.y - SHOT_RADIUS).abs() < 1e-4, "{}", s.pos.y);
+        }
+        // A step up lower than the radius: the sphere's edge contact lifts it onto the top.
+        let mut tris = vec![[Vec3::new(-500.0, 0.0, -500.0), Vec3::new(500.0, 0.0, -500.0), Vec3::new(500.0, 0.0, 30.0)], [Vec3::new(-500.0, 0.0, -500.0), Vec3::new(500.0, 0.0, 30.0), Vec3::new(-500.0, 0.0, 30.0)]];
+        tris.push([Vec3::new(-500.0, 3.0, 30.0), Vec3::new(500.0, 3.0, 30.0), Vec3::new(500.0, 3.0, 900.0)]);
+        tris.push([Vec3::new(-500.0, 3.0, 30.0), Vec3::new(500.0, 3.0, 900.0), Vec3::new(-500.0, 3.0, 900.0)]);
+        let step = Collision::new(tris);
+        let mut s = launch(&root());
+        for _ in 0..20 {
+            s.step(None, &step);
+        }
+        assert!(s.pos.z > 60.0 && (s.pos.y - 8.0).abs() < 1e-3, "on the step: {}", s.pos);
+        // Launched from 12 u up: no floor within 5 u, so it falls first and lands at 5 u.
+        let mut s = launch_at(&root(), Vec3::new(0.0, 12.0, 0.0));
+        s.step(Some(Vec3::new(400.0, 9.0, 0.0)), &col);
+        assert!(s.heading().x.abs() < 1e-6 && (s.pos.y - 12.0).abs() < 1e-5, "airborne: no turn, no fall yet");
+        let mut ticks = 1;
+        while s.pos.y > SHOT_RADIUS + 1e-4 && ticks < 40 {
+            s.step(None, &col);
+            ticks += 1;
+        }
+        assert!((s.pos.y - SHOT_RADIUS).abs() < 1e-4 && ticks < 20, "landed after {ticks}: {}", s.pos.y);
     }
 
     /// Root of Tree -80 / 60 / 0 / 0 / 500 / 100 (`FUN_140266060`): 60 / 10.8 =

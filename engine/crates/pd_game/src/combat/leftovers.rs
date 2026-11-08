@@ -1,5 +1,5 @@
 //! Film-comparison leftovers (test-only): the real skill tables against the original's own takes
-//! (`%USERPROFILE%\.pdtools\moverec\takes_full\`). Skipped when the converted cache is not present.
+//! (`C:\Users\laure\.pdtools\moverec\takes_full\`). Skipped when the converted cache is not present.
 
 use super::testkit::{floor, TEST_RULES};
 use super::*;

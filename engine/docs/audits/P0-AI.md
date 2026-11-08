@@ -1,6 +1,6 @@
 # P0 audit: the original's computer opponent (lane `aiaudit`, 2026-10-01)
 
-Read-only. Evidence: `%USERPROFILE%\.pdtools\re-out\decomp_all.c` (image base `0x140000000`), capstone
+Read-only. Evidence: `C:\Users\laure\.pdtools\re-out\decomp_all.c` (image base `0x140000000`), capstone
 disassembly of the exe for functions Ghidra left undefined (a scratch venv, nothing committed), the
 shipped data under `game_files\Assets\Data\com\` and `...\questdata\`, and our code at main `fc28225`.
 **No live trace of the CPU exists** and nothing was measured from footage, so every value below is

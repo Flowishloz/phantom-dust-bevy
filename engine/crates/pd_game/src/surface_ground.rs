@@ -122,6 +122,11 @@ impl SurfaceGround {
     /// program's segment-vs-face test `FUN_1401d22e0`; not counting the probe-excluded 0x1F faces):
     /// what a shot that ended on the stage between those two points hit.
     pub fn class_along(&self, from: Vec3, to: Vec3) -> Option<u8> {
+        self.hit_along(from, to).map(|(_, c)| c)
+    }
+
+    /// `class_along` with where along the segment (0..1) that nearest crossing lies.
+    pub fn hit_along(&self, from: Vec3, to: Vec3) -> Option<(f32, u8)> {
         let d = to - from;
         let mut best: Option<(f32, u8)> = None;
         for (t, &c) in self.mesh.tris.iter().zip(&self.mesh.class) {
@@ -134,7 +139,7 @@ impl SurfaceGround {
                 }
             }
         }
-        best.map(|(_, c)| c)
+        best
     }
 
     /// The first triangle, in the stage file's own order, that a sphere touches (centre closer than

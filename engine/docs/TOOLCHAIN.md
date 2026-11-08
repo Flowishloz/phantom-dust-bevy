@@ -1,30 +1,28 @@
 # Toolchain
 
-## Setup (what the project's own machine uses)
+## Setup (already done on Laurence's machine)
 
 - Rust stable via rustup, default host **x86_64-pc-windows-gnu** (no Visual Studio install needed). `~/.cargo/bin`.
-- Portable MinGW-w64 (WinLibs GCC, UCRT), unzipped to `%USERPROFILE%\.pdtools\mingw64` (a folder with no spaces in its path), or anywhere else if you set `$env:PD_MINGW` to it.
-- `engine/.cargo/config.toml` names `gcc` and `dlltool` and nothing else; `env.ps1` puts them on PATH.
+- Portable MinGW-w64 (WinLibs GCC 16, UCRT) at `C:\Users\laure\.pdtools\mingw64`.
+- `engine/.cargo/config.toml` sets the linker and `dlltool` to that MinGW.
 
-Every PowerShell session that builds must first run, from the repository root:
+Every PowerShell session that builds must first run:
 
 ```powershell
-. .\engine\env.ps1
+$env:Path = "C:\Users\laure\.pdtools\mingw64\bin;$env:USERPROFILE\.cargo\bin;$env:Path"
+Set-Location "C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine"
 ```
-
-That adds MinGW and cargo to PATH and moves to `engine/`.
 
 ## Known traps (each cost time once)
 
 | Symptom | Cause | Fix |
 |---|---|---|
 | `error calling dlltool 'dlltool.exe': program not found` | GNU target needs MinGW binutils for `raw-dylib` crates (windows-sys) | MinGW on PATH / config.toml `-C dlltool=` |
-| `ld.exe: cannot find %USERPROFILE%/Documents/GODOT/Phantom` | MinGW linker splits paths at spaces | Keep MinGW in a space-free path (`.pdtools`) |
+| `ld.exe: cannot find C:/Users/laure/Documents/GODOT/Phantom` | MinGW linker splits paths at spaces | Keep MinGW in a space-free path (`.pdtools`) |
 | `%1 is not a valid Win32 application` running the exe | Bevy + full debug info > 2 GB PE limit | `[profile.dev] debug = "line-tables-only"`, deps `debug = false` (in workspace Cargo.toml) |
 | `expected glam::Vec3, found bevy_math::Vec3` | two glam versions | keep `glam` in our crates equal to Bevy's (0.32 for Bevy 0.19) |
 | `failed to remove file ...pd_game.exe (os error 5)` | the game is running | ask Laurence to close it; don't kill it |
 | `â€”` and similar garbage appears in files | Windows PowerShell 5.1 `Get-Content`/`Set-Content` read UTF-8 as ANSI | Edit files with the Edit tool; in scripts use `[IO.File]::ReadAllText(p, [Text.Encoding]::UTF8)` / `WriteAllText(p, s, (New-Object Text.UTF8Encoding $false))`. Check with a grep for `â€` |
-| Windows Security quarantines the community dump tool | flagged as hack tool | user must allow it (agents must not change AV settings) |
 
 ## Bevy 0.19 API notes
 

@@ -7,7 +7,7 @@ Two halves meet here:
   hit-reaction rows, `shotpoints.json`, the character hand path) through the rules read
   from the program (`PDUWPMain`, image base 0x140000000; docs/PROGRAM-RE.md, with the
   address of each read next to the rule below, and re-read from
-  `%USERPROFILE%/.pdtools/re-out/decomp_all.c` where the doc was not enough).
+  `C:/Users/laure/.pdtools/re-out/decomp_all.c` where the doc was not enough).
 * OURS side: what `pd_game` actually did for that skill id, measured by the Rust probe
   `crates/pd_game/src/combat/skill_audit.rs` (it drives the real `Combat::cast` /
   `step`, the real `moves::*` flights, `pick_reaction`, `sfx::skill_sounds`...).

@@ -990,7 +990,7 @@ mod tests {
     fn st08_glow_halos_are_not_part_of_the_stage_export() {
         let dir = std::env::var_os("PD_GAME_FILES")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from(r"..\..\..\game_files\Assets\Data\Map"));
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Map"));
         let (Ok(alr), Ok(bytes)) = (crate::alr::Alr::load(&dir.join("st08.alr")), std::fs::read(dir.join("st08.dat"))) else {
             eprintln!("skipped: no game files at {}", dir.display());
             return;
@@ -1011,7 +1011,7 @@ mod tests {
     fn st09_07_area_file_aux_models_are_skipped() {
         let dir = std::env::var_os("PD_GAME_FILES")
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::PathBuf::from(r"..\..\..\game_files\Assets\Data\Map"));
+            .unwrap_or_else(|| std::path::PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\Map"));
         let (Ok(alr), Ok(bytes)) = (crate::alr::Alr::load(&dir.join("st09_07.alr")), std::fs::read(dir.join("st09_07.dat"))) else {
             eprintln!("skipped: no game files at {}", dir.display());
             return;

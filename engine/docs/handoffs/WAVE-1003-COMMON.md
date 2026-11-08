@@ -6,7 +6,7 @@ You are a Sonnet lane on the Phantom Dust rebuild (Rust + Bevy 0.19, GNU/MinGW).
 
 **Build environment (PowerShell):**
 - `. engine\env.ps1` from your worktree.
-- `$env:CARGO_TARGET_DIR = "<repo>\engine\target"` (shared and warm).
+- `$env:CARGO_TARGET_DIR = "C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\target"` (shared and warm).
 - Always build with `-j 2`. Six lanes share this folder, so cargo builds queue on its lock. Iterate with `cargo check -j 2 -p pd_game` and run the full build or tests in batches.
 - Your exe is `target\debug\pd_game.exe`, and other lanes overwrite that file. Right after your build, copy it to your own scratch file (e.g. `%TEMP%\<lane>_pd_game.exe`) and run that copy. If the link fails with "access denied", copy `target\debug\deps\pd_game-<hash>.exe` instead.
 - `engine\cache` in your worktree is a junction to the shared cache. **Never write into it.** To regenerate cache files, write them to a scratch folder and point the game at it (see the docs for `PD_FILM_CACHE`, or add a dev env switch). The orchestrator copies regenerated files in at merge.

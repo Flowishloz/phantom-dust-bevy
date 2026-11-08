@@ -25,7 +25,7 @@ Non-technical creative director. Plain English, outcome first, short bullets, **
 **What worked with him today (keep doing it):**
 - When he reports a visual/feel bug, **reproduce first** (tick-exact screenshots, logs, his footage) before fixing. Two of today's "fixes" missed because they were built on a simulated reproduction that didn't match what he saw; asking him for a debug recording (`tools/bats/PLAY_DEBUG_CONTROLS.bat`) or a short video (Win+Alt+R) found the real causes.
 - For position/size tweaks, **measure against the original** (his footage) with overlays — rounds of nudging by eye failed three times. When taste is involved, give **numbered option sheets (he picks a number)**.
-- He records the installed original (Appx `Microsoft.MSEsper`) on request; recordings live in `%USERPROFILE%\Pictures\Phantom Dust - Moves\`, `... - Moves 2\`, `Phantom Dust Walk\` (never commit).
+- He records the installed original (Appx `Microsoft.MSEsper`) on request; recordings live in `C:\Users\laure\Pictures\Phantom Dust - Moves\`, `... - Moves 2\`, `Phantom Dust Walk\` (never commit).
 - The game window: lanes only run it with `--screenshot` (window opens off-screen). If a build fails with "failed to remove pd_game.exe", **he has the game open — ask him to close it, never kill it.**
 
 ## Update 2026-09-28 (visual cycle) — read this first
@@ -65,7 +65,7 @@ Non-technical creative director. Plain English, outcome first, short bullets, **
 
 ## How to run lanes (proven)
 
-- One git worktree per lane outside the project folder: `git worktree add -b lane-<name> ..\pd-lane-<name> main`; one build copy per lane: `robocopy engine\target %USERPROFILE%\.pdtools\target-<name> /E /MT:16` (robocopy exit code 1 = success). Update `engine/docs/LANE-BRIEF.md` (hash + test counts) first and give each lane the brief + a prompt naming owned files.
+- One git worktree per lane outside the project folder: `git worktree add -b lane-<name> ..\pd-lane-<name> main`; one build copy per lane: `robocopy engine\target C:\Users\laure\.pdtools\target-<name> /E /MT:16` (robocopy exit code 1 = success). Update `engine/docs/LANE-BRIEF.md` (hash + test counts) first and give each lane the brief + a prompt naming owned files.
 - Launch with the Agent tool, `run_in_background: true`. A finished lane can be resumed with SendMessage (it keeps its context) — give it a new worktree.
 - When main moves while a lane runs, tell the lane to `git merge main` before its final commit.
 - On report: look at its sheets, check the diff (sim stays deterministic, no game data committed), merge `--no-ff`, run the tests, rebuild, spot-check in game, clean up (worktree, branch, build copy).

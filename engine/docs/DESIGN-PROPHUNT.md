@@ -50,9 +50,11 @@ NOT yet seen on screen** (the lane ran in a cloud container with no game data an
 
 ## Hider controls
 
+**2026-10-10 change (Laurence):** the hiders' head start is now **30 s**, and the knife homes slightly on a moving hider (see DECISIONS 2026-10-10); the disguise copy keeps the object's shadow-volume render layers (a lighting tell fixed). Where the text below says 12 s or 20 s, read 30 s.
+
 **2026-10-08 change (Laurence):** the hiders' head start is **20 s** (was 12; `SEEKER_COUNTDOWN_TICKS`), and **A, X or Y** all become an object (was X only: "Pressing A did not turn me into a prop"). A press with nothing in reach now shows "NOTHING IN REACH - GET CLOSER TO AN OBJECT" on the hider's line for 1.5 s (`Hider::nothing_in_reach`). Where the text below says 12 s or X, read 20 s and A / X / Y.
 
-- **X (button 1): become an object.** Picks the nearest stage object within 30 units (about two metres) whose box is on
+- **A / X / Y: become an object.** Picks the nearest stage object within 30 units (about two metres) whose box is on
   the hider's level (the Psycho Kinesis level rule: not upstairs, not downstairs) and that is a believable disguise:
   intact, at most 60 units on its longest side (the Psycho Kinesis size limit), not a structural piece (floors,
   bridges, road plates, pillars, the collapsing container), not a scripted piece, not a thin panel (railings, stair

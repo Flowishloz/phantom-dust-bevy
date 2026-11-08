@@ -84,7 +84,20 @@ pub struct HudView {
 pub fn hud_view(layout: &ViewLayout, i: usize, area: Vec2, hud_k: f32) -> HudView {
     let r = layout.rect_f(i, area);
     let single = if r.size.x >= area.x * 0.99 && r.size.y >= area.y * 0.99 { single_view_k() } else { 1.0 };
-    HudView { origin: r.pos, size: r.size, scales: scales(r.size, layout.is_grid()).times(hud_k * single) }
+    // A quarter cell (three or four players, not the wide bottom view) draws smaller than a wide view would at the same height.
+    let quarter = if layout.is_grid() && r.size.x < area.x * 0.99 { quarter_view_k() } else { 1.0 };
+    HudView { origin: r.pos, size: r.size, scales: scales(r.size, layout.is_grid()).times(hud_k * single * quarter) }
+}
+
+/// Extra HUD factor on a quarter view (players 1 and 2 of a three-player match, all four of a four-player one).
+/// Laurence 2026-10-10 on a 4K TV: the third player's wide view was perfect, but players 1 and 2 were "far too
+/// large and took too much of the screen"; he picked D = 55 % from the A-F sheet
+/// `engine/shots/hudq/quarter_hud_sheet.png`. `PD_QUARTER_HUD_K` overrides it (calibration sheets).
+pub const QUARTER_VIEW_K: f32 = 0.55;
+
+fn quarter_view_k() -> f32 {
+    static K: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *K.get_or_init(|| std::env::var("PD_QUARTER_HUD_K").ok().and_then(|v| v.parse().ok()).unwrap_or(QUARTER_VIEW_K))
 }
 
 /// Extra HUD factor when one view fills the whole window (1 player, 1 vs CPUs, the Prop Hunt seeker):
@@ -360,8 +373,10 @@ mod tests {
             let (p1, p2, p3) = (hud_view(&l, 0, win, 1.0), hud_view(&l, 1, win, 1.0), hud_view(&l, 2, win, 1.0));
             // The view: the whole bottom half.
             assert_eq!((p3.origin, p3.size), (Vec2::new(0.0, quarter_h), Vec2::new(win.x, quarter_h)), "{win}");
-            // The three HUDs are the same size: a wide view is height-limited.
-            assert_eq!(p3.scales, p1.scales, "{win}: the wide view draws its HUD as big as the top views' (same height)");
+            // The wide view is height-limited: its HUD is the size a quarter's would be without the quarter factor
+            // (Laurence 2026-10-10: the wide view was right, the narrow top views were too big, so they get QUARTER_VIEW_K).
+            assert_eq!(p3.scales, scales(p3.size, true).times(1.0), "{win}: the wide view is untouched");
+            assert_eq!(p1.scales, p3.scales.times(QUARTER_VIEW_K), "{win}: the top views are the wide view's HUD at the quarter factor");
             assert_eq!(p1.scales, p2.scales);
             // The dial sits at the bottom right of the wide view, inside the window, clear of the middle.
             let dial = dial_centre(&p3);
@@ -397,11 +412,11 @@ mod tests {
         let quad = ViewLayout::for_players(4, Split::SideBySide);
         for i in 0..4 {
             let v = hud_view(&quad, i, win, 1.0);
-            assert_eq!(v.scales, scales(Vec2::new(800.0, 450.0), true), "four players: every view is a quarter");
+            assert_eq!(v.scales, scales(Vec2::new(800.0, 450.0), true).times(QUARTER_VIEW_K), "four players: every view is a quarter, at the quarter factor");
         }
         // The HUD size option multiplies every view's scales.
         let big = hud_view(&quad, 3, win, 1.5);
-        assert_eq!(big.scales, scales(Vec2::new(800.0, 450.0), true).times(1.5));
+        assert_eq!(big.scales, scales(Vec2::new(800.0, 450.0), true).times(1.5 * QUARTER_VIEW_K));
     }
 
     /// A wide view has room to keep the capture hint away from the dial's ribbons: it sits in the

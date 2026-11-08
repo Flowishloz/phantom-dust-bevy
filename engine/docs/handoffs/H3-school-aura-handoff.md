@@ -7,7 +7,7 @@
 From his brief and reference stills: **"a simply glow with a subtle texture with wisps of aura"** around the player — soft, saturated from the inside out, no hard edges, no visible geometry, subtle solar-flare shimmer that trails behind movement, plus a soft floor light pool. The original is a PS2 effect; modern techniques are welcome, but the *result* must read as glow around a body, not a shape on a body.
 
 Reference material:
-- Footage frame: `engine/shots/schoolaura/v2/vs_footage_v2.png` (left panel = original; middle/right = our old v2), clip `%USERPROFILE%\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4`.
+- Footage frame: `engine/shots/schoolaura/v2/vs_footage_v2.png` (left panel = original; middle/right = our old v2), clip `C:\Users\laure\Pictures\Phantom Dust - Moves 2\Lock-On Animation.mp4`.
 - His two reference stills were pasted into chat (Hermes composer temp images, may no longer exist on disk — re-ask him if needed). The Nature-school still shows clear vertical wisp trails rising off the shoulders.
 - **Ask him for fresh screenshots early.** My single biggest failure mode: proof sheets rendered at the demo camera's far distance passed review, then failed instantly in live play up close on his bulky character. Close-camera, bulky-character captures FIRST, then a live test EARLY — do not iterate three rounds on far-camera sheets like I did.
 
@@ -39,7 +39,7 @@ The RE-lane note that should drive the next attempt (2026-09-28): *"the glow mas
 
 ## Current state of the tree (do not lose this)
 
-- Worktree `%USERPROFILE%\Documents\GODOT\pd-lane-h3`, branch `lane-h3`. Last commit `82e194b` (H3 r2, merged-era school aura). **Uncommitted in the worktree**: the v6 analytic billboard rewrite (3 files: `main.rs` one line, `school_aura.rs` full rewrite ~533 lines, `school_aura.wgsl` full rewrite ~166 lines). Tests were 276 green at last run. This code is the rejected approach — decide whether to keep it as scaffolding for the silhouette-mask version (the billboard spawn/update/visibility plumbing and FeetTracker ARE reusable) or `git checkout -- .` and start from `82e194b`. Either is defensible; the shader field code is not worth saving.
+- Worktree `C:\Users\laure\Documents\GODOT\pd-lane-h3`, branch `lane-h3`. Last commit `82e194b` (H3 r2, merged-era school aura). **Uncommitted in the worktree**: the v6 analytic billboard rewrite (3 files: `main.rs` one line, `school_aura.rs` full rewrite ~533 lines, `school_aura.wgsl` full rewrite ~166 lines). Tests were 276 green at last run. This code is the rejected approach — decide whether to keep it as scaffolding for the silhouette-mask version (the billboard spawn/update/visibility plumbing and FeetTracker ARE reusable) or `git checkout -- .` and start from `82e194b`. Either is defensible; the shader field code is not worth saving.
 - **`main` has moved** (a sidestep commit, `36e0f60`, landed while this lane ran). `lane-h3` is now both ahead (its 2 commits) and behind. Per the handoff rules, recreate the worktree from current `main` (`git worktree add -b lane-h3b ..\pd-lane-h3b main`) and re-apply what's kept — do not switch branches in the shared folder.
 - `PLAY.bat`'s exe (`engine/target/debug/pd_game.exe` in the main folder) currently holds the v6.3 analytic build. Overwriting that exe is fine and expected (build output, not source).
 - Tests: `cargo test -p pd_formats -p pd_game -p pd_convert` must stay green (7 + 36 + 276 at hand-off). `school_aura.rs` tests cover dominant-school pick/tie order/no-school, and (v6) probe geometry — replace/extend if the approach changes. Never commit shots/cache/game_files; never push.
@@ -47,9 +47,9 @@ The RE-lane note that should drive the next attempt (2026-09-28): *"the glow mas
 
 ## Environment quirks that cost me time (Windows + MSYS + Bevy 0.19)
 
-- `CARGO_TARGET_DIR` must be Windows form (`%USERPROFILE%\.pdtools\target-h3`), never `/c/...` — cargo is native and turns the MSYS path into `C:\c\...` (I built 3.2 GB into a junk tree before noticing; the exe timestamp not moving was the tell).
+- `CARGO_TARGET_DIR` must be Windows form (`C:\Users\laure\.pdtools\target-h3`), never `/c/...` — cargo is native and turns the MSYS path into `C:\c\...` (I built 3.2 GB into a junk tree before noticing; the exe timestamp not moving was the tell).
 - Screenshot paths passed to the game must be Windows paths too; `$PWD` in an argument breaks native exes ("Cannot save screenshot, IO error 3").
-- `. bashrc` lines I added: `export PD_ENGINE="%USERPROFILE%/Documents/GODOT/pd-lane-h3/engine"` and PATH with mingw64 + `~/.cargo/bin`. `rustfmt` is not installed for the GNU toolchain — lint errors from the patch tool are pre-existing noise, ignore them.
+- `. bashrc` lines I added: `export PD_ENGINE="C:/Users/laure/Documents/GODOT/pd-lane-h3/engine"` and PATH with mingw64 + `~/.cargo/bin`. `rustfmt` is not installed for the GNU toolchain — lint errors from the patch tool are pre-existing noise, ignore them.
 - WGSL (naga): no swizzle assignment (`sp.xz -= ...` is a compile error — rebuild the vector); `smoothstep(...).clamp(...)` chaining also failed — use `clamp(fn(...), 0.0, 1.0)`.
 - Vision analysis of big sheets times out — analyse small crops (≤ ~1–2 MB). And always compute a numeric pixel-diff between frames when claiming "animation is visible".
 - The demo camera sits FAR and the demo character is slim; Laurence plays CLOSE on bulky characters. Capture accordingly (see "the bar" above).
@@ -60,7 +60,7 @@ My proof sheets said "same effect at a glance" three times; Laurence's eyes said
 
 ## Suggested first day (opinion, clearly labelled)
 
-1. Read the `cb0[17]` lead: which shader(s) read it, what texture/mask it gates, what writes it and when (Level? a status?). `%USERPROFILE%\.pdtools\re-out\decomp_all.c` + `functions.txt`, disasm.exe for the HLSL, `tools/Esper-RE` reference-only.
+1. Read the `cb0[17]` lead: which shader(s) read it, what texture/mask it gates, what writes it and when (Level? a status?). `C:\Users\laure\.pdtools\re-out\decomp_all.c` + `functions.txt`, disasm.exe for the HLSL, `tools/Esper-RE` reference-only.
 2. If it confirms a mask/dissolve glow: prototype a **screen-space silhouette glow** — render the character's mask (stencil or offscreen), blur/glow it outward in a post pass, tint by school, add wisps as noise advected upward + FeetTracker trails, keep the floor pool. That is the only remaining approach that is "a shader around the player", tracks the pose by construction, and cannot show triangles.
 3. Capture close + bulky first. One variant, live test, iterate HIS notes, not sheet scores.
 4. Then, and only then, consider the school colour table hunt finished (it is: capsule table — see above) and move to Jobs 2–5 of `../archive/handoffs/H3-polish-batch.md` in order, one commit each. Job 2's half-done analysis is at the bottom of this file.

@@ -1,7 +1,5 @@
 # Engine docs index
 
-> **Public repository note.** Older history docs mention a few files that are kept private and are not in this repository (agent skill files, personal handoffs, third-party research notes, notes on the Xbox disc build). Those links are dead on purpose. Start at the repository [README](../../README.md), [LEGAL.md](../../LEGAL.md) and [docs/WHAT-WE-FOUND.md](../../docs/WHAT-WE-FOUND.md).
-
 Map of every doc. **Status:** *current* = kept up to date, trust it; *reference* = stable facts, change only on new evidence; *log* = append-only, newest first; *history* = dated, read for background only (a banner at its top points to the current doc). One owner per topic: see [ARCHIVIST.md](ARCHIVIST.md). Start a session with `AGENTS.md`, then [NEXT-SESSION.md](NEXT-SESSION.md).
 
 ## Where we are and what is next
@@ -70,6 +68,7 @@ Map of every doc. **Status:** *current* = kept up to date, trust it; *reference*
 | [DESIGN-BRAWL.md](DESIGN-BRAWL.md) | game modes framework (Close Quarters built), Rules flags | current |
 | [DESIGN-PROPHUNT.md](DESIGN-PROPHUNT.md) | Prop Hunt: Laurence's brief, rules, controls, code map, choices made, what needs a PC check (built 2026-10-07; seen on the PC 2026-10-08) | current |
 | [PERF.md](PERF.md) | frame-time work: what each speed-up does, its off switch, and the measured tables (round 1 + round 2, measured on the PC on mains 2026-10-08) | current |
+| [../../ONLINE-MP-HANDOFF.md](../../ONLINE-MP-HANDOFF.md) | picking up Brett's online branch: what it adds, cache regeneration, two-PC test checklist (branch merged into main 2026-10-03) | history (two-PC checklist still useful) |
 | [ONLINE-PLAN.md](ONLINE-PLAN.md) | online versus: single-screen view, Online menu, LAN + Steam 480, gamemodes online; merged into main 2026-10-03 ("Merged into main" at its end is current) | current (built; two-PC test open) |
 | [DESIGN-2V2.md](DESIGN-2V2.md) | teams exist; resuscitation (revive) not built | design |
 | [DESIGN-REPLAYS.md](DESIGN-REPLAYS.md) | replay format, `Match::checksum()`, determinism | design |

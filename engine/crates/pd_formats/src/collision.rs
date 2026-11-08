@@ -576,6 +576,41 @@ impl Collision {
         best
     }
 
+    /// The OBJECT floor probe of a crawler (`FUN_140163cb0(centre, r)`, called by `FUN_140266290` with r = the
+    /// object's radius `+0x190`): every face the sphere at `c` touches whose stored normal has y above 0.643
+    /// (`0x1402f7d50`), skipping hull classes 0x10 / 0x12 / 0x14 / 0x1F, pushes the centre out to `r` in turn
+    /// (`FUN_140195f30`, below). True when there was such a face (the crawler is on the floor). So a crawler's
+    /// centre rides `r` above the floor; walls (steeper faces) are left to the segment sweep.
+    ///
+    /// The contact list is taken at the centre as it arrived (the program queries first, then pushes face by
+    /// face in list order; ours: grid order). A sphere exactly tangent to a face (the centre pushed out to `r`
+    /// last tick) counts as touching it; the program's sphere-mesh narrowphase (pair table `0x1402dc2f0`) is not
+    /// read, but a crawler that lost the floor every other tick would steer on half the ticks only, and the
+    /// crawler takes matched the original's paths with a turn every tick.
+    pub fn object_sphere_floor(&self, c: &mut Vec3, r: f32) -> bool {
+        let mut ids = Vec::new();
+        let e = Vec3::splat(r);
+        self.floors.in_box(*c - e, *c + e, &mut ids);
+        let at = *c;
+        let contacts: Vec<(usize, Vec3)> = ids
+            .iter()
+            .map(|&i| i as usize)
+            .filter(|&i| self.live(self.floors.owner[i]) && !object_skips(self.floors.class[i]))
+            .filter_map(|i| {
+                let t = &self.floors.tris[i];
+                let n = (t[1] - t[0]).cross(t[2] - t[0]).normalize_or_zero();
+                // The stored normal faces up for every floor of a `WIND` stage; object hulls keep their raw
+                // winding, so take the side that faces up.
+                let n = if n.y < 0.0 { -n } else { n };
+                (n.y > STAGE_FLOOR_NORMAL_Y && at.distance(closest_on_triangle(at, t)) <= r + SPHERE_TOUCH).then_some((i, n))
+            })
+            .collect();
+        for &(i, n) in &contacts {
+            sphere_push_out(c, r, &self.floors.tris[i], n);
+        }
+        !contacts.is_empty()
+    }
+
     /// Which wall faces a body cylinder is inside, for audits: (owner, class,
     /// horizontal push needed) per triangle the cylinder overlaps, same
     /// geometry as `push_out_of_walls`.
@@ -629,6 +664,48 @@ fn height_at(t: &[Vec3; 3], x: f32, z: f32) -> Option<f32> {
     let w2 = 1.0 - w0 - w1;
     let eps = -1e-4;
     (w0 >= eps && w1 >= eps && w2 >= eps).then(|| w0 * a.y + w1 * b.y + w2 * c.y)
+}
+
+/// Float slack for "the sphere touches the face" in `Collision::object_sphere_floor`: a centre the last push
+/// left at exactly `r` must still touch (rounding can put it a hair beyond).
+const SPHERE_TOUCH: f32 = 1e-3;
+
+/// `FUN_140195f30(centre, r, triangle, stored normal)`: d = n . (c - v0). Only when |d| <= r: if the foot of
+/// the centre on the face's plane lies inside the triangle (`FUN_140291af0`), a centre on the front side
+/// (d >= 0) moves along n to exactly r from the plane; otherwise the first edge (v0v1, v1v2, v2v0) whose
+/// nearest point is closer than r (`FUN_140193fd0`) pushes the centre straight away from that point to r.
+fn sphere_push_out(c: &mut Vec3, r: f32, t: &[Vec3; 3], n: Vec3) {
+    let d = n.dot(*c - t[0]);
+    if d.abs() > r {
+        return;
+    }
+    let foot = *c - n * d;
+    // Inside: the foot is on the inner side of all three edges (in the face's plane; the sign follows the
+    // triangle's own winding, which may be the opposite of `n` on an object hull).
+    let w = (t[1] - t[0]).cross(t[2] - t[0]).normalize_or_zero();
+    let inside = (0..3).all(|k| {
+        let (a, b) = (t[k], t[(k + 1) % 3]);
+        w.dot((b - a).cross(foot - a)) >= -1e-4 * (b - a).length()
+    });
+    if inside {
+        if d >= 0.0 {
+            *c += n * (r - d);
+        }
+        return;
+    }
+    for k in 0..3 {
+        let (a, b) = (t[k], t[(k + 1) % 3]);
+        let ab = b - a;
+        let s = if ab.length_squared() > 1e-12 { ((*c - a).dot(ab) / ab.length_squared()).clamp(0.0, 1.0) } else { 0.0 };
+        let q = a + ab * s;
+        let v = *c - q;
+        if v.length_squared() < r * r {
+            if v.length_squared() > 1e-12 {
+                *c = q + v.normalize() * r;
+            }
+            return;
+        }
+    }
 }
 
 /// Closest point on triangle to `p` (Ericson, Real-Time Collision Detection 5.1.5).
@@ -709,6 +786,26 @@ mod tests {
         assert_eq!(c.raycast_owner(Vec3::new(0.0, 50.0, 0.0), -Vec3::Y, 100.0).map(|h| h.1), Some(NO_OBJECT));
         c.set_object_gone(7, false);
         assert_eq!(c.ground_below(0.0, 0.0, 50.0), Some(10.0));
+    }
+
+    /// `FUN_140163cb0` / `FUN_140195f30`: a sphere less than 5 u over a floor at stage-sized coordinates (hundreds
+    /// of units, where a too-tight inside test once sent it to the edge branch) is pushed straight up to 5 u by the
+    /// face it stands over; a wall (normal y below 0.643) is no floor; nothing within reach = no contact. (Near an
+    /// edge shared by two faces the program's order of contacts decides: the face whose edge comes first pushes the
+    /// centre away from that edge, as `FUN_140195f30` does.)
+    #[test]
+    fn the_object_sphere_floor_pushes_the_centre_out_to_its_radius() {
+        let tris: Vec<_> = quad(270.0, 1000.0).into_iter().chain([[Vec3::new(400.0, 260.0, -50.0), Vec3::new(400.0, 300.0, -50.0), Vec3::new(400.0, 300.0, 50.0)]]).collect();
+        let c = Collision::new(tris);
+        for at in [Vec3::new(314.5, 273.0, 250.0), Vec3::new(-261.0, 274.9, 151.0), Vec3::new(10.0, 270.5, -30.0)] {
+            let mut p = at;
+            assert!(c.object_sphere_floor(&mut p, 5.0), "{at}");
+            assert!((p - Vec3::new(at.x, 275.0, at.z)).length() < 1e-3, "{at} -> {p}");
+        }
+        let mut high = Vec3::new(0.0, 276.0, 0.0);
+        assert!(!c.object_sphere_floor(&mut high, 5.0) && high.y == 276.0, "6 u up: no contact, it falls");
+        let mut by_wall = Vec3::new(397.0, 290.0, 0.0);
+        assert!(!c.object_sphere_floor(&mut by_wall, 5.0) && by_wall.x == 397.0, "a wall is left to the segment sweep");
     }
 
     #[test]

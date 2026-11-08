@@ -2,7 +2,7 @@
 # from tools/disasm/disasm.exe output (docs/STAGE-LIGHT.md), sampling the REAL
 # spec77.dds with clamp + bilinear exactly like sampler s3.
 import struct, math, sys
-LUT = open(r'../../../game_files/Assets/Data/spec77.dds','rb').read()[128:]
+LUT = open(r'C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/Assets/Data/spec77.dds','rb').read()[128:]
 
 def texel(x, y):
     x = min(max(x, 0), 255); y = min(max(y, 0), 255)

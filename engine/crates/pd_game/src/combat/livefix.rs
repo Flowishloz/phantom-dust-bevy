@@ -1,5 +1,5 @@
 //! Live-evidence checks of the `livefix` lane (test-only): knock-down landing / get-up root motion
-//! against the original's own trace (`%USERPROFILE%\.pdtools\moverec\takes_full_trace\`, P1 =
+//! against the original's own trace (`C:\Users\laure\.pdtools\moverec\takes_full_trace\`, P1 =
 //! character index 1 = `pc01a`). Skipped when the converted cache is not present.
 
 use super::testkit::{floor, TEST_RULES};

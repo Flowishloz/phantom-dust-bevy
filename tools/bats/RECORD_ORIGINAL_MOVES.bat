@@ -9,7 +9,7 @@ rem   * starts the original game if it is not running (and closes THAT copy when
 rem   * loads your profile, starts a one-on-one versus match, puts each skill in a slot,
 rem     lines the two fighters up, presses the buttons from a script and films the game window;
 rem   * writes <id>_<name>.mp4 + <id>_<name>_trace.csv + <id>_<name>.json per skill into
-rem     %USERPROFILE%\.pdtools\moverec\takes\  (outside the project, never committed);
+rem     C:\Users\laure\.pdtools\moverec\takes\  (outside the project, never committed);
 rem   * copies your save folder first and puts it back afterwards if the game changed it.
 rem Do not play the original at the same time. Leave the PC alone while it runs (a few minutes).
 title Phantom Dust move recorder - do not close until it says done
@@ -27,8 +27,8 @@ if "%~1"=="" (
   python "%~dp0..\..\engine\re\move_recorder.py" --list "%~1"
 )
 echo.
-echo Takes are in %USERPROFILE%\.pdtools\moverec\takes\
+echo Takes are in C:\Users\laure\.pdtools\moverec\takes\
 echo Save check (should say OK):
-python "%~dp0..\..\engine\re\save_guard.py" --ref "%USERPROFILE%\.pdtools\original-save-backup-20261001"
+python "%~dp0..\..\engine\re\save_guard.py" --ref "C:\Users\laure\.pdtools\original-save-backup-20261001"
 echo.
 pause

@@ -18,6 +18,7 @@ use pd_formats::collision::{Collision, NO_OBJECT};
 use std::collections::HashMap;
 
 mod lock;
+mod pose;
 mod reactions;
 mod roster;
 #[cfg(test)]
@@ -28,6 +29,9 @@ mod livefix;
 mod leftovers;
 #[cfg(test)]
 mod combos;
+pub use pose::{Body1Clip, Body1Root};
+// Sound side only: the stage sweep of a melee blow (`ground_sfx`), lane r7sound.
+mod sweeps;
 pub use roster::{FriendlyFire, Roster, DRAW, MAX_PLAYERS};
 
 /// How a decided round ended (`Combat::round_outcome`).
@@ -196,6 +200,10 @@ const REVERSE_WAIT_TICKS: u16 = 20;
 /// The dash stops this far short of the target's centre (PROGRAM-RE.md: "a
 /// quirk" -- the program can end slightly inside this).
 pub const LUNGE_STOP_SHORT: f32 = 11.0;
+/// Sim ticks a melee caster stays in its cast once its body is `sim::GROUND_DROP` below its last floor: the
+/// grounded flag clears in that program tick's physics and the next program tick hands the state to the fall
+/// (`FUN_140254590` then `FUN_140257c70`), so the cast ends one program tick (2 sim ticks) later.
+pub const MELEE_FALL_CUT_TICKS: u8 = 2;
 /// The melee dash only engages a target within this range at cast time
 /// (PROGRAM-RE.md "Lock-on": distance band 1); fallback window length for a
 /// skill with no action row.
@@ -874,6 +882,9 @@ pub struct Fighter {
     /// `FUN_140250780`, once per program tick), so `Match::step` holds this fighter's push-apart until
     /// the second half has been walked (`mid_dash_step`).
     dash_mid: bool,
+    /// Sim ticks in a row this fighter's body has been more than `sim::GROUND_DROP` below its last floor contact
+    /// (the program clears the grounded flag there, `FUN_140254590`): the melee cast's fall cut (`lunge`).
+    ungrounded: u8,
     /// Last sim tick's blade (a sword is swept: this tick's and last tick's).
     last_blade: Option<(Vec3, Vec3)>,
     /// Status 9 (Decoy, add code 40, `FUN_140272bc0` case 0x28): this player
@@ -1028,6 +1039,7 @@ impl Fighter {
             ko_tick: None,
             dash_step: 0.0,
             dash_mid: false,
+            ungrounded: 0,
             last_blade: None,
             forced_lock: None,
             status_hover: false,
@@ -1217,6 +1229,10 @@ pub struct Area {
     drops: Vec<RainDrop>,
     first: i16,
     gap: i16,
+    /// A Rain cloud chases its target only when the aim kept one (`FUN_14026bbd0` follows while `+0x48`
+    /// is set; `FUN_14026e410` clears it when the range band pulls the point or no floor is under the
+    /// target). READ, lane r7sound.
+    follows: bool,
 }
 
 /// One Rain drop (`FUN_14026b8d0`): a straight, fast object of 5 u radius.
@@ -1470,6 +1486,13 @@ pub struct Combat {
     clip_ticks: [HashMap<String, u16>; MAX_PLAYERS],
     /// Each player's clip root-motion curves (`set_root_curves`, reactions2 lane).
     root_curves: [HashMap<String, Vec<[f32; 2]>>; MAX_PLAYERS],
+    /// Each player's BODY1 through every clip (`set_body1_paths`, `combat/pose.rs`), the root column rule,
+    /// and each fighter's clip clock for it (derived from hashed state each tick; not hashed).
+    body1: [HashMap<String, Body1Clip>; MAX_PLAYERS],
+    body1_root: Body1Root,
+    pose: [Option<pose::PoseClock>; MAX_PLAYERS],
+    /// A standing fighter's idle clip machine (`pose::IdleClock`, the program's state 0).
+    idle: [Option<pose::IdleClock>; MAX_PLAYERS],
     /// Each skill's action-table rows (ground s12, mid-air s13), read once at
     /// startup from `skills.json` (`Combat::set_action_rows`): docs/
     /// FORMATS-SKILLS.md "Action table". Empty in tests that don't set one
@@ -1729,6 +1752,10 @@ impl Combat {
             rng: 0x9E37_79B9,
             clip_ticks: std::array::from_fn(|_| HashMap::new()),
             root_curves: std::array::from_fn(|_| HashMap::new()),
+            body1: std::array::from_fn(|_| HashMap::new()),
+            body1_root: Body1Root::default(),
+            pose: [None; MAX_PLAYERS],
+            idle: [None; MAX_PLAYERS],
             action_rows: HashMap::new(),
             chain_rows: HashMap::new(),
             chain_first: HashMap::new(),
@@ -1842,23 +1869,71 @@ impl Combat {
     /// Where player `i`'s cast of `skill` makes its objects, in marker order
     /// (the program's fire matrix, `FUN_14018a310` / `FUN_1402626d0`): the
     /// `SHOTnn` marker offsets of the skill's effect slot 1 carried by the
-    /// caster's matrix; when the effect has none, the right hand at the fire
-    /// frame of the cast clip. Empty when no data is loaded: the chest.
+    /// caster's matrix; when the effect has none, the right hand as the last
+    /// skeleton update left it (`fire_hand`). Empty when no data is loaded: the chest.
     fn shot_marks(&self, i: usize, skill: i16, players: &[Player]) -> Vec<Vec3> {
         let air = self.uses_air_row(skill, self.airborne[i]);
         let me = &players[i];
         if let (Some(air), Some((g, a))) = (air, self.shot_markers.get(&skill)) {
             let list = if air { a } else { g };
             if !list.is_empty() {
-                return list.iter().map(|m| local_to_world(me.pos, me.yaw, *m)).collect();
+                // READ: the marker is carried by the cast effect's matrix, a pointer to the fighter's `+0xbe0`
+                // block (`FUN_14018a040` stores the request's matrix pointer at entry `+0x40`, `FUN_14018a310`
+                // multiplies the marker into it). That block is rebuilt from the position and facing only in the
+                // clip update (`FUN_140257510` -> `FUN_140259000`), after the tick's root motion and after the
+                // fire, which runs first in the state handler. So, like the hand, a marker sits on the body
+                // where the PREVIOUS program tick's root motion left it (clip frame fire - 1).
+                let body = self.cast_row(i, skill).map_or(me.pos, |row| self.fire_body(i, &row.anim_name, row.fire_tick as f32, players));
+                return list.iter().map(|m| local_to_world(body, me.yaw, *m)).collect();
             }
         }
         if let Some(row) = self.cast_row(i, skill) {
-            if let Some((p, _)) = self.hand_world(i, &row.anim_name, row.fire_tick as f32, players) {
+            if let Some(p) = self.fire_hand(i, &row.anim_name, row.fire_tick as f32, players) {
                 return vec![p];
             }
         }
         Vec::new()
+    }
+
+    /// The right hand the fire hands its objects when the effect has no marker. READ: the fire
+    /// (`FUN_14025c720` -> `FUN_1402626d0`, inside the state handler `FUN_140256e80`) runs at the start
+    /// of the caster's tick (`FUN_14024ec80`), before that tick's clip advance and root motion
+    /// (`FUN_140257510`) and skeleton update (`FUN_140298020`); the hand is a pointer to the stored RHAND
+    /// bone matrix (`FUN_14018aa50`, hash `0xADB07630`). So the hand is the PREVIOUS program tick's: clip
+    /// frame `fire - 1`, on the body where that tick's root motion left it. LIVE (`008_Rock_Shot` trace):
+    /// at the end of press + k the caster stands on ATK_THROW's root curve at frame k (k = 1, 2, 3 ... 19,
+    /// 20), so the pose the fire at press + 20 reads is frame 19. (ATK_THROW's hand moves ~5 u in that frame.)
+    fn fire_hand(&self, i: usize, clip: &str, fire: f32, players: &[Player]) -> Option<Vec3> {
+        let frame = (fire - 1.0).max(0.0);
+        let (p, _) = self.hands[i].get(clip)?.at(frame)?;
+        Some(local_to_world(self.fire_body(i, clip, fire, players), players[i].yaw, p))
+    }
+
+    /// Where the caster's body stood at the end of the previous program tick's root motion, clip frame
+    /// `fire - 1` of `clip`: the point the fire's stored matrices (the hand, `fire_hand`, and the cast
+    /// effect's `+0xbe0` block that carries a `SHOTnn` marker, `shot_marks`) were last written from.
+    fn fire_body(&self, i: usize, clip: &str, fire: f32, players: &[Player]) -> Vec3 {
+        let frame = (fire - 1.0).max(0.0);
+        let me = &players[i];
+        // Back along the clip's own root track to where the body stood at `frame` (a cast holds the body
+        // still apart from its root motion: `Fighter::rooted`).
+        let mut body = me.pos;
+        if let (Some((root_clip, t)), Some(curve)) = (self.fighters[i].root, self.root_curves[i].get(clip)) {
+            if root_clip == clip && !curve.is_empty() && t > frame {
+                let at = |t: f32| -> [f32; 2] {
+                    let last = curve.len() - 1;
+                    let t = t.clamp(0.0, last as f32);
+                    let (a, b) = (t.floor() as usize, (t.ceil() as usize).min(last));
+                    let k = t - t.floor();
+                    [curve[a][0] + (curve[b][0] - curve[a][0]) * k, curve[a][1] + (curve[b][1] - curve[a][1]) * k]
+                };
+                let (now, then) = (at(t), at(frame));
+                let (side, fwd) = (now[0] - then[0], now[1] - then[1]);
+                let (s, c) = me.yaw.sin_cos();
+                body -= Vec3::new(fwd * s + side * c, 0.0, fwd * c - side * s);
+            }
+        }
+        body
     }
 
     /// Every skill's action-table rows (main.rs at startup, from
@@ -2503,6 +2578,10 @@ impl Combat {
     /// is where the Aura refill runs).
     fn tick_fighter(&mut self, i: usize, players: &mut [Player], buttons: u8, col: &Collision) {
         if std::mem::take(&mut players[i].took_off) {
+            // The wind-up's root track ends with state 4 (state 5 plays JUMP_UP with root 0, `0x14025a106`).
+            if self.fighters[i].root.is_some_and(|(c, _)| c == "JUMP_START") {
+                self.fighters[i].root = None;
+            }
             self.log(CombatEvent::JumpTakeoff { who: i });
         }
         if let Some(fall) = players[i].landed.take() {
@@ -2561,6 +2640,8 @@ impl Combat {
     fn fighter_step(&mut self, i: usize, players: &mut [Player], buttons: u8, col: &Collision) {
         let prev = std::mem::replace(&mut self.fighters[i].prev_buttons, buttons);
         let f = &mut self.fighters[i];
+        let p = &players[i];
+        f.ungrounded = if p.ground_y - p.pos.y > crate::sim::GROUND_DROP { f.ungrounded.saturating_add(1) } else { 0 };
         f.status.tick();
         if let Some(g) = &mut f.guard {
             g.ticks = g.ticks.saturating_sub(1);
@@ -2688,24 +2769,21 @@ impl Combat {
                 let top = f.flight_peak.get_or_insert(players[i].pos.y);
                 *top = top.max(players[i].pos.y);
             }
+            // The lift's float ended with the body still in the air: the physics hands states 14-16 to state 17
+            // (`FUN_140257c70`, clip 0x3b = WALLHIT_BACK_LOOP for a kind-9 row: `+0x48` = 2), a knock-down fall with
+            // no push. It lands like any knock-down (`FUN_140254c80` state 0x11: sound 82 + the surface probe, the
+            // fall's Health cost, the landing clip, 2 s lying, the get-up) -- LIVE `303_Antigravity_Trap`: P0 lifted
+            // 48.3 u (270.48 -> 318.76, state 14), state 17 from the apex at tick 184, down at 270.31 on tick 212 with
+            // Health -1 and the knock-down landing sounds (0.82 + 0.70), still in state 17 when the take ends (tick 221).
             if f.action_ticks == 0 && f.lift_hold && !players[i].grounded {
-                f.action_ticks = 1;
+                self.begin_lift_fall(i);
+                return;
             }
-            // The lifted body comes down in state 17 and its landing costs Health by the fall from the top of the lift
-            // like any knock-down's (`FUN_140254c80`: < 40 u nothing, 40-80 u 1, > 80 u 2): LIVE `303_Antigravity_Trap`, P0 lifted
-            // 48.3 u (270.48 -> 318.76, state 14), state 17 from the apex at tick 184, down at 270.31 on tick 212 with Health -1.
-            let lift_fall = if f.action_ticks == 0 && f.lift_hold { f.flight_peak.take().map(|top| top - players[i].pos.y) } else { None };
             if f.action_ticks == 0 {
                 f.action = Action::Ready;
                 f.lift_hold = false;
                 f.struggle = false;
                 f.root = None;
-                if let Some(fall) = lift_fall {
-                    let cost = if fall < LAND_FALL_MIN { 0 } else if fall <= LAND_FALL_HEAVY { 1 } else { 2 };
-                    if cost > 0 {
-                        self.change_health(i, -cost);
-                    }
-                }
                 let f = &mut self.fighters[i];
                 // A second reaction chained behind a stagger (s60) starts
                 // as the first one ends (`0x14025c1a0`).
@@ -3062,9 +3140,8 @@ impl Combat {
         // stores `+0x8c` = atan2(caster y + centre height - target point y, horizontal distance to the target
         // point), the pitch `FUN_1402514c0` tips the fire matrix by (`moves::Launch::pitch`).
         let fire_pitch = if aim_locked {
-            let (me, t) = (players[i].pos, players[victim].target_point());
-            let ty = t.y + players[victim].body.point_height;
-            (me.y + moves::HIT_BODY_CENTRE - ty).atan2(Vec3::new(t.x - me.x, 0.0, t.z - me.z).length())
+            let (me, t) = (players[i].pos, players[victim].body_point());
+            (me.y + moves::HIT_BODY_CENTRE - t.y).atan2(Vec3::new(t.x - me.x, 0.0, t.z - me.z).length())
         } else {
             0.0
         };
@@ -3573,7 +3650,7 @@ impl Combat {
             feet,
             facing: Vec3::new(yaw.sin(), 0.0, yaw.cos()),
             pitch: if f.aim_locked { f.fire_pitch } else { 0.0 },
-            target: homes.then(|| body_centre(players[victim].target_point())),
+            target: homes.then(|| players[victim].body_point()),
             index: 0,
             col: Some(col),
             marks,
@@ -3604,7 +3681,7 @@ impl Combat {
                     None => Vec3::new(px, py, pz),
                 };
                 let id = self.take_id();
-                self.areas.push(Area { id, owner: i, target: victim, skill, pos: at, spec, timer: spec.warn, pulses_left: 1, armed: false, life: u16::MAX, detonate: false, hit: 0, age: 0, settled: false, slide: Vec3::ZERO, strength: None, cloud: Vec3::ZERO, drops: Vec::new(), first: 0, gap: 0 });
+                self.areas.push(Area { id, owner: i, target: victim, skill, pos: at, spec, timer: spec.warn, pulses_left: 1, armed: false, life: u16::MAX, detonate: false, hit: 0, age: 0, settled: false, slide: Vec3::ZERO, strength: None, cloud: Vec3::ZERO, drops: Vec::new(), first: 0, gap: 0, follows: false });
             }
             // Holes, columns and clouds are aimed at the floor under the target;
             // the unlimited Hole (motion 16) "makes one hole at every player's
@@ -3616,17 +3693,27 @@ impl Combat {
                 // unlimited Hole is made under the caster as well.
                 let victims: Vec<usize> = if everyone { self.roster.slots().filter(|&j| j == i || self.victims_of(i).any(|v| v == j)).collect() } else { vec![victim] };
                 for v in victims {
-                    let c = Launch { target: if everyone { Some(body_centre(players[v].target_point())) } else { ctx.target }, ..*ctx };
-                    let (aim, _) = c.aim(def, true);
-                    // No floor under the aim point: it fails silently.
-                    let Some(y) = col.ground_below_object(aim.x, aim.z, aim.y + 1.0) else { continue };
+                    let c = Launch { target: if everyone { Some(players[v].body_point()) } else { ctx.target }, ..*ctx };
+                    let (aim, kept) = c.aim(def, true);
+                    // READ (r7sound): the Rain cloud's init `FUN_14026b480` makes no floor test of its own: after
+                    // `FUN_14026e410(obj, 1)` the cloud is the (band-pulled) aim point lifted s69 along the matrix's
+                    // up row; only the Hole (`FUN_14026a510`, ray `FUN_140163680`) and the column fail without a
+                    // floor. A pulled aim point lies on the 3-D line from the hand and can sit under the floor,
+                    // which used to drop every Rain cast from 70 u (Rain of Stones, Photon Shower, ...).
+                    let y = if spec.kind == Kind::RainCloud {
+                        aim.y
+                    } else {
+                        // No floor under the aim point: it fails silently.
+                        let Some(y) = col.ground_below_object(aim.x, aim.z, aim.y + 1.0) else { continue };
+                        y
+                    };
                     // The marker slides the way the target was running (their
                     // movement over a program tick = two sim ticks).
                     let run = if v == i { Vec3::ZERO } else { (players[v].pos - players[v].prev_pos) * 2.0 };
                     let at = Vec3::new(aim.x, y, aim.z);
                     let (life, cloud) = (spec.warn + spec.active, at + Vec3::Y * spec.cloud_height);
                     let id = self.take_id();
-                    self.areas.push(Area { id, owner: i, target: v, skill, pos: at, spec, timer: 0, pulses_left: spec.pulses, armed: false, life, detonate: false, hit: 0, age: 0, settled: false, slide: Vec3::new(run.x, 0.0, run.z), strength, cloud, drops: Vec::new(), first: spec.warn as i16, gap: 0 });
+                    self.areas.push(Area { id, owner: i, target: v, skill, pos: at, spec, timer: 0, pulses_left: spec.pulses, armed: false, life, detonate: false, hit: 0, age: 0, settled: false, slide: Vec3::new(run.x, 0.0, run.z), strength, cloud, drops: Vec::new(), first: spec.warn as i16, gap: 0, follows: kept });
                 }
             }
         }
@@ -3796,8 +3883,15 @@ impl Combat {
         let dash_len = (dash_end.saturating_sub(dash_start) / moves::SIM_TICKS_PER_TABLE_TICK).max(1);
         let dashing = dash_eligible && elapsed > dash_start && elapsed <= dash_end;
         if dashing {
-            let want = yaw_of(toward(players[i].pos, target));
-            players[i].yaw = turn_toward(players[i].yaw, want, melee.dash_turn() / moves::SIM_TICKS_PER_TABLE_TICK as f32).0;
+            if (elapsed - dash_start) % 2 == 1 {
+                // The handler runs once per program tick (`FUN_14025be40`): the bearing to the target's
+                // collider point is read at the START of the tick and the body turns by up to the whole
+                // s66 / 10 degrees at once (`FUN_1402906e0` then rebuilds the fighter's axes from the new
+                // facing, and the dash step `FUN_14024f9c0` walks along row 2 of that matrix): both
+                // sim-tick halves of the tick's step go along this facing.
+                let want = yaw_of(toward(players[i].pos, target));
+                players[i].yaw = turn_toward(players[i].yaw, want, melee.dash_turn()).0;
+            }
         } else if !dash_eligible || elapsed <= dash_start {
             cast_turn(aim, players, i);
         }
@@ -3828,6 +3922,20 @@ impl Combat {
         }
         // The cast clip's root motion, after the dash (see `fighter_step`).
         self.root_step(i, players);
+        // The push-apart in the caster's own physics, before its blow is tested (READ `FUN_14024ec80`: the state
+        // handler's dash step, the clip advance + root motion `FUN_140257510`, then the physics `FUN_140254590`,
+        // whose first call is the fighter vtable's +0x70 = `FUN_140250780`, and only after the skeleton and the
+        // collider point the fighter's objects `FUN_14024d2f0`, where the blow is tested). So on the hit tick the
+        // overlap this tick's root motion made is shared out (half to the victim) BEFORE the victim is knocked
+        // and flies, not after (the end-of-tick push in `Match::step` then finds the pair apart). Skipped half way
+        // through a dash's program step, like the end-of-tick push.
+        if !self.mid_dash_step(i) {
+            for j in self.roster.slots() {
+                if j != i && !self.mid_dash_step(j) {
+                    crate::sim::push_apart(players, i, j, col);
+                }
+            }
+        }
         // The blow is created at the fire tick, and that is when it is paid
         // for; a cast that can't pay lands nothing (the dash still happened).
         let mut already_struck = already_struck;
@@ -3878,7 +3986,7 @@ impl Combat {
             // original's blow never lands.
             let eye = body_centre(from);
             for v in candidates {
-                let c = body_centre(players[v].target_point());
+                let c = players[v].body_point();
                 if melee.reaches(at, facing, last, c) {
                     let (ray, d) = (c - eye, c.distance(eye));
                     if d < 1e-3 || col.raycast_los(eye, ray / d, d, None).is_none() {
@@ -3894,8 +4002,20 @@ impl Combat {
             self.fighters[i].struck = true;
             let bodies = bodies_of(players);
             let via = Via { button: self.fighters[i].last_slot, strength: self.fighters[i].cast_strength.take() };
-            for v in struck {
+            for &v in &struck {
                 self.strike(i, v, id, Some(from), bodies, Arrival::Melee, via);
+            }
+            // The update order (READ `FUN_14024ec80` -> `FUN_14024d2f0`): the blow is tested at the END of
+            // its owner's program tick, and a victim in a LATER slot then runs its whole tick (the first
+            // of its reaction, a full program tick of flight) in that same program tick. A blow tested on
+            // the second sim tick of the program tick leaves the victim one sim tick of flight short
+            // (the rest of its tick is its own `fighter_step` just after this one), so give it the other.
+            if elapsed % 2 == 0 {
+                for &v in &struck {
+                    if v > i && self.fighters[v].action == Action::Knocked && self.fighters[v].flying {
+                        self.knock_flight(v, players, col);
+                    }
+                }
             }
         }
 
@@ -3905,7 +4025,13 @@ impl Combat {
         if self.fighters[i].action == action_before_strike {
             let f = &mut self.fighters[i];
             f.action = if elapsed >= fire_tick { Action::Cast } else { Action::Lunge };
-            if elapsed >= clip_end {
+            // Off an edge: the melee state (12) is not one the program holds at a ledge (`FUN_140254590` restores
+            // the position only in states 6 / 10 / 13 / 25 / 26 / 28, mask 0x16002440), so the body falls; once it
+            // is `GROUND_DROP` below its last floor (`+0x12e78`) its grounded flag clears, and the next program tick's physics
+            // hands any state but 5 / 11 / 14-18 to the fall (`FUN_140257c70` -> `FUN_14025a1c0`, state 5): the
+            // cast ends there, before its clip (LIVE `189_Swift_Punch` rec 74, `182_Swift_Kick` rec 72).
+            let fell = f.ungrounded > MELEE_FALL_CUT_TICKS && !f.air_cast;
+            if elapsed >= clip_end || fell {
                 f.action = Action::Ready;
                 f.melee = false;
             }
@@ -4435,6 +4561,35 @@ impl Combat {
         }
     }
 
+    /// A lift's float ended with the body in the air (state 14 -> 17, `FUN_140257c70`): the knock-down
+    /// fall of the program's kind-9 case. No launch, no push; the clip is WALLHIT_BACK_LOOP (0x3b, a
+    /// front-set clip), so it lands in the front-set landing clips and cannot meet a wall again
+    /// (`FUN_140259b30` only reacts to clips 0x38 / 0x3a).
+    fn begin_lift_fall(&mut self, victim: usize) {
+        let first = self.clip_hold_ticks(victim, "WALLHIT_BACK");
+        let f = &mut self.fighters[victim];
+        f.action = Action::Knocked;
+        f.action_ticks = KNOCKDOWN_TICKS;
+        f.lie_ticks = KNOCK_LYING_TICKS;
+        f.lie_from_collapse = false;
+        f.front_set = true;
+        f.land_class = 0;
+        f.lying_elapsed = 0;
+        f.land_flip = false;
+        f.wall_hits_left = 0;
+        f.wall_cooldown = WALL_COOLDOWN_TICKS;
+        f.wall_hit = Some((58, first));
+        f.stuck_ticks = 0;
+        f.queued_reaction = 0;
+        f.stamp_left = 0;
+        f.struggle = false;
+        f.lift_hold = false;
+        f.lift_launch = None;
+        f.root = None;
+        f.knock_vel = Vec3::ZERO;
+        f.flying = true;
+    }
+
     /// Player `i` fell out of the arena and was put back on their spawn
     /// (`FUN_140251d80`): no reaction -- the body stands on its start point,
     /// facing the start yaw (`Match::step` puts it there), idle, with 3
@@ -4789,7 +4944,7 @@ impl Combat {
             // a [Course] field makes it steer away from its target (it can still land), a Reverse /
             // About Face field sends it back at its owner (`FUN_14026cd70` codes 5 and 6).
             let holder = reach[p.owner].iter().copied().find(|&v| {
-                let c = body_centre(players[v].target_point());
+                let c = players[v].body_point();
                 fields[v].is_some_and(|g| p.shot.pos.distance(c) <= g.field.max(GUARD_FIELD_MIN))
             });
             if let Some((v, g)) = holder.and_then(|v| fields[v].map(|g| (v, g))).filter(|_| !p.turned && !turn_proof.contains(&p.skill)) {
@@ -4798,7 +4953,7 @@ impl Combat {
                 if g.kind == barrier::kind::REVERSE {
                     // Back at whoever sent it.
                     (p.owner, p.target) = (v, p.owner);
-                    p.shot.send_back(body_centre(players[p.target].target_point()));
+                    p.shot.send_back(players[p.target].body_point());
                     // Code 6 sets the object's own wait to 20 program ticks (`+0x20 = 0x14`, `FUN_14026cd70`;
                     // `FUN_1402638d0` counts it down before the next move): the reversed shell hangs 20 ticks
                     // where it turned (LIVE `034_Reverse`: P1's Blaster, fired at 65, hits P1 at 88). A Reflect
@@ -4808,7 +4963,7 @@ impl Combat {
                     p.shot.away = true;
                 }
             }
-            let target = body_centre(players[p.target].target_point());
+            let target = players[p.target].body_point();
             if !p.shot.step(Some(target), col) {
                 return false;
             }
@@ -4832,7 +4987,7 @@ impl Combat {
                     if p.shot.pass && p.shot.hit & (1 << j) != 0 {
                         continue;
                     }
-                    let c = body_centre(players[j].target_point());
+                    let c = players[j].body_point();
                     let q = moves::closest_on_segment(a, b, c);
                     if q.distance(c) > radius || (!p.shot.through_walls && !clear(a, c)) {
                         continue;
@@ -4858,10 +5013,10 @@ impl Combat {
                 }
                 return false;
             }
-            // A wall or the floor in the way of the step (a crawler looks along the floor from 3 u up).
+            // A wall or the floor in the way of the step: the segment `+0x140 -> +0x100` (`FUN_14026ca50`), a
+            // crawler's too (its centre rides 5 u over the floor, `moves::crawl`).
             if !p.shot.through_walls && !matches!(p.shot.flight, moves::Flight::Tornado(_)) {
-                let low = if matches!(p.shot.flight, moves::Flight::Crawl(_)) { Vec3::Y * 3.0 } else { Vec3::ZERO };
-                let (from, to) = (a + low, b + low);
+                let (from, to) = (a, b);
                 let v = to - from;
                 let len = v.length();
                 if let Some((t, obj, face, stored)) = (len > 1e-4).then(|| col.raycast_object_face(from, v / len, len, own)).flatten() {
@@ -5012,7 +5167,7 @@ impl Combat {
                             if a.hit & (1 << v) != 0 {
                                 continue;
                             }
-                            let c = body_centre(players[v].target_point());
+                            let c = players[v].body_point();
                             let near = if a.spec.kind == Kind::Hole {
                                 players[v].grounded && c.distance(base) < a.spec.radius + HIT_BODY_RADIUS && clear(base, c)
                             } else {
@@ -5041,7 +5196,7 @@ impl Combat {
                             if taken & (1 << v) != 0 {
                                 continue;
                             }
-                            let c = body_centre(players[v].target_point());
+                            let c = players[v].body_point();
                             let q = moves::closest_on_segment(d.prev, d.pos, c);
                             if q.distance(c) <= area::DROP_RADIUS + HIT_BODY_RADIUS && (walls_ok || clear(d.prev, c)) {
                                 taken |= 1 << v;
@@ -5070,12 +5225,14 @@ impl Combat {
                     });
                     if !a.armed {
                         // The cloud holds s69 x 0.1 u over its target and chases at s71 / 10.8 a tick.
-                        let t = body_centre(players[a.target].target_point());
-                        let dest = Vec3::new(t.x, t.y + a.spec.cloud_height, t.z);
-                        let v = dest - a.cloud;
-                        let d = v.length();
-                        a.cloud = if a.spec.follow <= d { a.cloud + v / d * a.spec.follow } else { dest };
-                        a.pos = Vec3::new(a.cloud.x, a.pos.y, a.cloud.z);
+                        if a.follows {
+                            let t = players[a.target].body_point();
+                            let dest = Vec3::new(t.x, t.y + a.spec.cloud_height, t.z);
+                            let v = dest - a.cloud;
+                            let d = v.length();
+                            a.cloud = if a.spec.follow <= d { a.cloud + v / d * a.spec.follow } else { dest };
+                            a.pos = Vec3::new(a.cloud.x, a.pos.y, a.cloud.z);
+                        }
                         a.first -= 1;
                         if a.first < 0 && a.pulses_left > 0 {
                             a.gap -= 1;
@@ -5115,7 +5272,7 @@ impl Combat {
                             if a.timer == 0 {
                                 a.armed = true;
                                 alive.iter().any(|&j| {
-                                    let c = body_centre(players[j].target_point());
+                                    let c = players[j].body_point();
                                     c.distance(a.pos) < radius && clear(a.pos + Vec3::Y, c)
                                 })
                             } else {
@@ -5182,7 +5339,7 @@ impl Combat {
                 if b.mask & (1 << v) == 0 {
                     continue;
                 }
-                let c = body_centre(players[v].target_point());
+                let c = players[v].body_point();
                 let d = c - b.pos;
                 let len = d.length();
                 // A mine's blast sits ON the floor: a line that starts exactly on a floor triangle can catch it
@@ -5595,6 +5752,39 @@ mod tests {
         for _ in 0..ticks {
             c.step(p, buttons, col);
         }
+    }
+
+    /// READ `FUN_14024ec80`: a fighter's physics `FUN_140254590` (whose first call, vtable +0x70, is the push-apart
+    /// `FUN_140250780`) runs after its dash step and root motion and before its objects `FUN_14024d2f0`, where the
+    /// blow is tested. So a victim the caster is overlapping when the blow lands is pushed out to the contact distance
+    /// first and starts its knock flight from there (MEASURED, take 182: the knocked victim moves 1.48 u on the hit
+    /// tick, 1.19 u of flight + 0.29 u of push, and the caster's last dash step then measures 11.19 u).
+    #[test]
+    fn a_melee_caster_pushes_the_victim_apart_before_its_blow_lands() {
+        let (mut c, mut p, col) = setup(60.0);
+        c.set_action_row(WAVE, Some(ActionRow { anim_name: "ATK_SPHERE".into(), cast_sound: 201, charge_cycle: 0, dash_start: 10, dash_end: 20, fire_tick: 20, hit_window_end: 22 }), None);
+        c.set_reaction_row(AIR_KNOCKDOWN_ROW, ReactionRow { kind: reaction_kind::KNOCKDOWN, launch_speed: 20, launch_angle: 50, voice_group: 5, w: [0, 45, 0, 0, 0, 48, 0, 0], ..Default::default() });
+        c.fighters[0].level = 4;
+        c.fighters[0].aura_ticks = 4 * AURA_TICKS_PER_POINT;
+        c.fighters[1].level = 3;
+        c.fighters[0].slots[1] = Some(WAVE);
+        p[1].pos = Vec3::new(0.0, 0.0, 8.0);
+        press(&mut c, &mut p, &col, 0, 1);
+        let flat = |a: Vec3, b: Vec3| Vec3::new(a.x - b.x, 0.0, a.z - b.z).length();
+        let contact = p[0].body.radius() + p[1].body.radius();
+        for _ in 0..80 {
+            // Keep the victim overlapping the caster (8 u, inside the 10 u contact) and in the air (any hit knocks down).
+            let ahead = Vec3::new(p[0].yaw.sin(), 0.0, p[0].yaw.cos());
+            p[1].pos = p[0].pos + ahead * 8.0;
+            p[1].grounded = false;
+            run(&mut c, &mut p, &col, [0; 2], 1);
+            if c.fighters[1].action == Action::Knocked {
+                let d = flat(p[1].pos, p[0].pos);
+                assert!(d > contact + 0.1, "pushed out to {contact} before the blow, then flown: {d}");
+                return;
+            }
+        }
+        panic!("the blow never landed");
     }
 
     fn press(c: &mut Combat, p: &mut [Player], col: &Collision, who: usize, slot: usize) {
@@ -6083,6 +6273,38 @@ mod tests {
         assert_eq!(c.fighters[1].health, START_HEALTH - 3, "STR = target's Level");
     }
 
+    /// READ `FUN_14024ec80` -> `FUN_14024d2f0`: a blow is tested at the end of its owner's program tick and a
+    /// victim in a later slot then runs its whole first reaction tick in the same program tick. LIVE / MEASURED:
+    /// the originals' knocked victim moves a full 1.19 u on the hit tick (187, 188, 189, 190, 193, 123, 125 ...), the
+    /// same as on every tick after it. A blow found on the second sim tick of its program tick therefore gives the
+    /// victim two sim ticks of flight now, and one a tick after.
+    #[test]
+    fn a_knocked_victim_flies_a_whole_program_tick_on_the_hit_tick() {
+        let (mut c, mut p, col) = setup(60.0);
+        c.set_action_row(WAVE, Some(ActionRow { anim_name: "ATK_SPHERE".into(), cast_sound: 201, charge_cycle: 0, dash_start: 10, dash_end: 20, fire_tick: 20, hit_window_end: 22 }), None);
+        c.set_reaction_row(AIR_KNOCKDOWN_ROW, ReactionRow { kind: reaction_kind::KNOCKDOWN, launch_speed: 20, launch_angle: 50, voice_group: 5, w: [0, 45, 0, 0, 0, 48, 0, 0], ..Default::default() });
+        p[1].grounded = false; // airborne: any hit knocks down (row 27)
+        c.fighters[0].level = 4;
+        c.fighters[0].aura_ticks = 4 * AURA_TICKS_PER_POINT;
+        c.fighters[1].level = 3;
+        c.fighters[0].slots[1] = Some(WAVE);
+        press(&mut c, &mut p, &col, 0, 1);
+        let mut at = Vec::new();
+        for _ in 0..80 {
+            run(&mut c, &mut p, &col, [0; 2], 1);
+            at.push((c.fighters[1].action == Action::Knocked, p[1].pos));
+            if at.len() >= 2 && at.iter().filter(|(k, _)| *k).count() >= 2 {
+                break;
+            }
+        }
+        let first = at.iter().position(|(k, _)| *k).expect("the blow knocks the victim down");
+        let flat = |a: Vec3, b: Vec3| Vec3::new(a.x - b.x, 0.0, a.z - b.z).length();
+        let d_hit = flat(at[first].1, at[first - 1].1);
+        let d_next = flat(at[first + 1].1, at[first].1);
+        assert!(d_next > 0.1, "it flies: {d_next}");
+        assert!((d_hit / d_next - 2.0).abs() < 0.25, "two sim ticks of flight on the hit tick: {d_hit} against {d_next} a tick after");
+    }
+
     /// A flat hand path: the right hand held at `at` (character frame) through
     /// every frame of the clip, pointing along +Z.
     fn still_hand(at: Vec3) -> HandClip {
@@ -6162,18 +6384,20 @@ mod tests {
     }
 
     /// `FUN_14018a310`: with no `SHOTnn` marker in the effect the object is
-    /// made at the right-hand bone, at the cast clip's fire frame (the action
-    /// row's fire tick, 30 fps frames).
+    /// made at the right-hand bone as the last skeleton update left it: the fire
+    /// runs before the tick's clip advance and skeleton update (`FUN_14024ec80`),
+    /// so it is the frame BEFORE the action row's fire tick (30 fps frames).
     #[test]
-    fn a_shot_with_no_marker_starts_at_the_hand_on_the_fire_frame() {
+    fn a_shot_with_no_marker_starts_at_the_hand_a_frame_before_the_fire() {
         let (mut c, mut p, _) = setup(300.0);
         c.set_action_row(BLASTER, Some(blaster_row()), None);
         let mut clip = still_hand(Vec3::ZERO);
-        clip.pos[20] = Vec3::new(1.0, 13.0, 7.0);
+        clip.pos[19] = Vec3::new(1.0, 13.0, 7.0);
+        clip.pos[20] = Vec3::new(9.0, 9.0, 9.0);
         c.set_hand_paths([HashMap::from([("ATK_SHOT".to_string(), clip)])]);
         let marks = c.shot_marks(0, BLASTER, &p);
         assert_eq!(marks.len(), 1);
-        assert!((marks[0] - Vec3::new(1.0, 13.0, 7.0)).length() < 1e-4, "{:?}", marks);
+        assert!((marks[0] - Vec3::new(1.0, 13.0, 7.0)).length() < 1e-4, "frame 19, not the fire frame 20: {:?}", marks);
         // Facing +X it is carried round with the body.
         p[0].yaw = std::f32::consts::FRAC_PI_2;
         let marks = c.shot_marks(0, BLASTER, &p);
@@ -6181,6 +6405,41 @@ mod tests {
         // No hand data and no marker data: nothing (the chest default).
         let (c, p, _) = setup(300.0);
         assert!(c.shot_marks(0, BLASTER, &p).is_empty());
+    }
+
+    /// The hand the fire reads stands on the body where the previous program tick's root motion left it:
+    /// the clip's root track is walked back from the current root clock to the hand's frame.
+    #[test]
+    fn the_fire_hand_rides_the_body_of_the_previous_tick() {
+        let (mut c, p, _) = setup(300.0);
+        c.set_action_row(BLASTER, Some(blaster_row()), None);
+        c.set_hand_paths([HashMap::from([("ATK_SHOT".to_string(), still_hand(Vec3::new(0.0, 10.0, 0.0)))])]);
+        // Root track: 1 u forward per frame.
+        let curve: Vec<[f32; 2]> = (0..40).map(|k| [0.0, k as f32]).collect();
+        c.set_root_curves([HashMap::from([("ATK_SHOT".to_string(), curve.clone())]), HashMap::from([("ATK_SHOT".to_string(), curve)])]);
+        let name: &'static str = pd_formats::anim::ANIM_NAMES.iter().copied().find(|n| *n == "ATK_SHOT").unwrap();
+        c.fighters[0].root = Some((name, 20.0));
+        let m = c.shot_marks(0, BLASTER, &p);
+        // Facing +Z (yaw 0): one frame of root motion back = 1 u behind the body.
+        assert!((m[0] - (p[0].pos + Vec3::new(0.0, 10.0, -1.0))).length() < 1e-4, "{m:?}");
+    }
+
+    /// A `SHOTnn` marker is carried by the cast effect's matrix, the fighter's `+0xbe0` block, which only the clip
+    /// update rebuilds (`FUN_140257510` -> `FUN_140259000`, after the root motion, after the fire): like the hand,
+    /// it sits on the body of the previous program tick (clip frame fire - 1), not this tick's.
+    #[test]
+    fn a_marker_rides_the_body_of_the_previous_tick() {
+        let (mut c, p, _) = setup(200.0);
+        c.set_action_row(TWIN_LASERS, Some(laser_row()), None);
+        c.set_shot_markers(HashMap::from([(TWIN_LASERS, (vec![Vec3::new(13.0, 12.0, 0.0)], Vec::new()))]));
+        // Root track: 1 u forward per frame.
+        let curve: Vec<[f32; 2]> = (0..40).map(|k| [0.0, k as f32]).collect();
+        c.set_root_curves([HashMap::from([("ATK_LASER".to_string(), curve.clone())]), HashMap::from([("ATK_LASER".to_string(), curve)])]);
+        let name: &'static str = pd_formats::anim::ANIM_NAMES.iter().copied().find(|n| *n == "ATK_LASER").unwrap();
+        let fire = laser_row().fire_tick as f32;
+        c.fighters[0].root = Some((name, fire));
+        let m = c.shot_marks(0, TWIN_LASERS, &p);
+        assert!((m[0] - (p[0].pos + Vec3::new(13.0, 12.0, -1.0))).length() < 1e-4, "{m:?}");
     }
 
     /// The effect's `SHOTnn` markers (eft0045 Double Laser: (13, 12, 0) and
@@ -6227,6 +6486,30 @@ mod tests {
         };
         let (with, without) = (start_gap(true), start_gap(false));
         assert!(with > without + 15.0, "markers {with} u apart, chest {without} u");
+    }
+
+    /// Off an edge a melee cast ends for the fall before its clip does: the program holds a body at a ledge only
+    /// in states 6 / 10 / 13 / 25 / 26 / 28 (`FUN_140254590`, mask 0x16002440), and once the melee state's body
+    /// has lost its grounded flag the next program tick hands it to the fall state 5 (`FUN_140257c70` ->
+    /// `FUN_14025a1c0`). LIVE `189_Swift_Punch` (state 12 -> 5 at rec 74, clip end 84), `182_Swift_Kick` (72, 75).
+    #[test]
+    fn a_melee_cast_off_an_edge_ends_for_the_fall_a_program_tick_after_it_is_five_units_down() {
+        let (mut c, mut p, col) = setup(500.0);
+        (c.fighters[0].level, c.fighters[0].aura_ticks) = (4, 4 * AURA_TICKS_PER_POINT);
+        c.fighters[0].slots[1] = Some(WAVE);
+        press(&mut c, &mut p, &col, 0, 1);
+        run(&mut c, &mut p, &col, [0; 2], 4);
+        assert_eq!(c.fighters[0].action, Action::Lunge);
+        p[0].pos.y = p[0].ground_y - crate::sim::GROUND_DROP + 0.5;
+        c.step(&mut p, [0; 2], &col);
+        assert_eq!(c.fighters[0].action, Action::Lunge, "4.5 u down: still grounded for the program");
+        p[0].pos.y = p[0].ground_y - crate::sim::GROUND_DROP - 0.5;
+        c.step(&mut p, [0; 2], &col);
+        c.step(&mut p, [0; 2], &col);
+        assert_eq!(c.fighters[0].action, Action::Lunge, "the grounded flag went in this program tick: the state holds");
+        c.step(&mut p, [0; 2], &col);
+        assert_eq!(c.fighters[0].action, Action::Ready, "the next program tick: the fall");
+        assert!(!c.fighters[0].melee);
     }
 
     #[test]
@@ -6999,9 +7282,15 @@ mod tests {
         for (up, expect) in [(0.0, START_HEALTH - 6), (30.0, START_HEALTH)] {
             let (mut c, mut p, col) = setup(100.0);
             cast_and_release(&mut c, &mut p, &col, ROOT);
-            assert!(c.projectiles[0].pos.y < 2.0, "starts on the floor");
+            // It starts at the fire matrix's point (here the chest: no SHOTnn marker in the test) and falls onto
+            // the floor, then rides 5 u over it (`FUN_140266060`, `FUN_140163cb0`).
+            assert!(c.projectiles[0].pos.y > moves::SHOT_RADIUS, "starts at the launch point");
             p[1].pos.y = up; // (held in the air for the test)
-            run(&mut c, &mut p, &col, [0; 2], 90);
+            run(&mut c, &mut p, &col, [0; 2], 40);
+            if let Some(s) = c.projectiles.first() {
+                assert!((s.shot.pos.y - moves::SHOT_RADIUS).abs() < 1e-3, "rides its radius over the floor: {}", s.shot.pos.y);
+            }
+            run(&mut c, &mut p, &col, [0; 2], 50);
             assert_eq!(c.fighters[1].health, expect, "target {up} up");
         }
     }
@@ -8236,8 +8525,9 @@ mod tests {
         }
 
         /// `FUN_14025be40`: in the dash the body steers toward the target by at most
-        /// s66 / 10 degrees a program tick (here 30 -> 3 deg = 1.5 deg a sim tick) and moves
-        /// along its own facing.
+        /// s66 / 10 degrees a program tick (here 30 -> 3 deg) and moves along its own facing. The
+        /// handler runs once per program tick, so the whole turn happens on the first sim tick of
+        /// the pair (the bearing is read at the start of the tick) and the second one holds the facing.
         #[test]
         fn a_dashing_attack_steers_at_most_its_s66_tenth_degrees_a_program_tick() {
             let id = 960;
@@ -8252,15 +8542,21 @@ mod tests {
             p[1].pos = Vec3::new(-50.0, 0.0, 0.0);
             let mut last = p[0].yaw;
             let mut biggest = 0.0f32;
+            let mut steps = Vec::new();
             for _ in 0..16 {
                 run(&mut c, &mut p, &col, [0; 2], 1);
                 let step = (p[0].yaw - last).abs();
+                steps.push(step);
                 biggest = biggest.max(step);
                 last = p[0].yaw;
             }
-            let cap = 1.5f32.to_radians();
-            assert!(biggest <= cap + 1e-4, "steered {} deg in one tick, cap 1.5", biggest.to_degrees());
+            let cap = 3.0f32.to_radians();
+            assert!(biggest <= cap + 1e-4, "steered {} deg in one tick, cap 3", biggest.to_degrees());
             assert!(biggest > cap * 0.5, "and it does steer: {}", biggest.to_degrees());
+            // One turn per program tick: of every two sim ticks one holds the facing.
+            for pair in steps.chunks(2).filter(|p| p.len() == 2) {
+                assert!(pair[0].min(pair[1]) < 1e-4, "a program tick turns once: {pair:?}");
+            }
         }
 
         // ---- payment at the fire tick ---------------------------------------
@@ -8925,7 +9221,7 @@ mod tests {
         /// The row table agrees with the real file when it is there.
         #[test]
         fn the_built_in_table_is_the_games_own() {
-            let path = std::path::Path::new("../../../game_files/Assets/Data/gstorage/gsdata_en.dat");
+            let path = std::path::Path::new("C:/Users/laure/Documents/GODOT/Phantom Dust Rewrite/game_files/Assets/Data/gstorage/gsdata_en.dat");
             let Ok(d) = std::fs::read(path) else {
                 eprintln!("skipping the_built_in_table_is_the_games_own: no gsdata");
                 return;
@@ -10264,13 +10560,38 @@ mod tests {
         /// along the fire matrix tipped by the press's pitch toward the target point (`FUN_140258180` stores
         /// it at `+0x12f8c`, `FUN_1402514c0` applies it), so a Laser cast while one fighter is higher than the
         /// other flies a tipped arc.
+        /// Re-recorded by lane GAMEPLAY-ACCURACY round 6 (weapons 5fb3120985f2e51b -> b4ff34967eae3efe, traps
+        /// 4560fe5e478b9861 -> 027bab7fe0232a8d, tricks 039c125a7d43f344 -> 7dc457a9908960d3, effects
+        /// 86509b64a487e55a -> e1c17ecf26dc1f5a, effects2 e489fe0d1df909c0 -> 7f6bc00b67e71860, effects3
+        /// e67641aa1c13b8dd -> e472256f20648b41; capsules and the movement-only golden did not move): every hit test
+        /// and aim point now reads the victim's collider point at BODY1 height (`FUN_1402513a0`, `Player::body_point`),
+        /// shells leave along the pitched fire matrix (`FUN_140264570`), crawlers ride their 5 u radius over the
+        /// floor (`FUN_140163cb0`). Kept by the round-6 film gate (247 ids 106 -> 92 mismatches, clean 177 -> 189).
+        /// (The fire's hand, `Combat::fire_hand`, is not in the goldens: their fighters carry no hand paths.)
+        /// Re-recorded by lane r7sound (weapons b4ff34967eae3efe -> 5d7c3a72fdc4de5e, traps 027bab7fe0232a8d ->
+        /// ee8b1a096e364c65, effects3 e472256f20648b41 -> 31cab278b2ce8112; the others did not move): the TRAPS
+        /// deck's Rain cloud (motion 20) is now made without a floor test at the band-pulled aim point and
+        /// chases its target only when the aim kept it (`FUN_14026b480`, `FUN_14026bbd0`, `FUN_14026e410`). Kept by
+        /// the r7sound film gate (247 ids 92 -> 71 mismatches, clean 189 -> 208).
+        /// Re-recorded by lane r10dash (effects2 7f6bc00b67e71860 -> 27df716469deabb0; the six other scenarios and the
+        /// movement-only golden did not move): a melee dash reads its bearing once per program tick and turns by the
+        /// whole s66 / 10 degrees at the start of it (`FUN_14025be40`), and a victim in a later slot flies its whole
+        /// first reaction tick in the program tick of the blow (`FUN_14024ec80` -> `FUN_14024d2f0`), so the one
+        /// scripted duel with a melee dash and knock-down closes and flies a little differently.
+        /// Re-recorded by lane r11aim (effects2 27df716469deabb0 -> a6239a47102da898; the six other scenarios and the
+        /// movement-only golden did not move, and with the new push switched off the old value comes back, checked): a
+        /// melee caster is pushed apart from the other bodies inside its own tick, after its dash step and root motion
+        /// and before its blow is tested (`FUN_14024ec80`: the physics `FUN_140254590` calls the push `FUN_140250780`
+        /// first, the objects `FUN_14024d2f0` come after), so the scripted duel's melee caster and its victim are
+        /// pushed before the blow instead of after it. (The BODY1 `bind` default is not in the goldens: their
+        /// fighters carry no BODY1 tables.)
         const GOLDEN: [(&str, u64); 7] = [
-            ("weapons", 0x5fb3_1209_85f2_e51b),
-            ("traps", 0x4560_fe5e_478b_9861),
-            ("tricks", 0x039c_125a_7d43_f344),
-            ("effects", 0x8650_9b64_a487_e55a),
-            ("effects2", 0xe489_fe0d_1df9_09c0),
-            ("effects3", 0xe676_41aa_1c13_b8dd),
+            ("weapons", 0x5d7c_3a72_fdc4_de5e),
+            ("traps", 0xee8b_1a09_6e36_4c65),
+            ("tricks", 0x7dc4_57a9_9089_60d3),
+            ("effects", 0xe1c1_7ecf_26dc_1f5a),
+            ("effects2", 0xa623_9a47_102d_a898),
+            ("effects3", 0x31ca_b278_b2ce_8112),
             ("capsules", 0x33c7_dbbd_1818_b62f),
         ];
 

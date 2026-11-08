@@ -317,8 +317,9 @@ fn move_self(c: &mut Combat, players: &mut [Player], caster: usize, def: &SkillD
         move_kind::LEVITATE => float_and_jump(c, players, caster, def),
         // The program's Jump (skill 239, `FUN_140270200` s44 = 0 -> `FUN_140257b90`).
         move_kind::JUMP => {
-            let (wind, launch) = jump_numbers(c, caster, def);
+            let (wind, launch) = jump_numbers(c, caster, def.raw[45]);
             players[caster].begin_jump(wind, launch);
+            c.root_jump_start(caster);
             true
         }
         // The Dash skill (s44 = 8, `FUN_140270200` case 8): see `dash`.
@@ -338,9 +339,8 @@ fn move_self(c: &mut Combat, players: &mut [Player], caster: usize, def: &SkillD
 ///   first and the state lasts its length - 2 program ticks (13 for the 15-frame clip), 2 sim ticks each.
 /// Program ticks are 30 Hz, sim ticks 60 Hz: the launch is converted as u/s (x 30), the wind-up
 /// as x 2 (`SIM_TICKS_PER_TABLE_TICK`).
-fn jump_numbers(c: &Combat, caster: usize, def: &SkillDef) -> (u16, f32) {
-    debug_assert_eq!(def.raw[47], 0, "gravity (s47 + 100) x 0.0012 is the ordinary 0.12 only for s47 = 0");
-    let apex = 10.0 * def.raw[45].max(1) as f32;
+fn jump_numbers(c: &Combat, caster: usize, height: i16) -> (u16, f32) {
+    let apex = 10.0 * height.max(1) as f32;
     let launch = (2.0 * crate::sim::GRAVITY * apex).sqrt();
     let clip = c.clip_hold_ticks(caster, "JUMP_START");
     let wind = clip.saturating_sub(2 * moves_ticks_per_table()).max(2);
@@ -354,13 +354,36 @@ fn jump_numbers(c: &Combat, caster: usize, def: &SkillDef) -> (u16, f32) {
 /// reach `10 x s45` u and hangs there for the rest of the s46 ticks; when the status ends it falls.
 /// Status 11 is cleared by a hit (`FUN_14026f870` tail), Levitate included (same status as Skywalk).
 pub(super) fn float_and_jump(c: &mut Combat, players: &mut [Player], caster: usize, def: &SkillDef) -> bool {
-    let (wind, launch) = jump_numbers(c, caster, def);
+    debug_assert_eq!(def.raw[47], 0, "gravity (s47 + 100) x 0.0012 is the ordinary 0.12 only for s47 = 0");
+    let (wind, launch) = jump_numbers(c, caster, def.raw[45]);
     let f = &mut c.fighters[caster];
     f.status.hover_ticks = if def.raw[46] > 0 { table_ticks(def.raw[46]) } else { u16::MAX };
     // Informational: where the rise ends. The float is a real jump now, not a pin to this height.
     f.status.hover_height = 10.0 * def.raw[45].max(1) as f32;
     f.status_hover = true;
     players[caster].begin_float(wind, launch);
+    c.root_jump_start(caster);
+    true
+}
+
+/// Demon's Wing (skill 292, s43 = 4, kind s45 = 13: `FUN_140270b00` case 0xd): status 8
+/// (invisible) and status 11 (float) for s53 program ticks, then `FUN_140257b90(h = s49 = 2, the
+/// skill's clip index, now = 0, g = DAT_1402f7ce4 = 0.12)` -- the same JUMP_START wind-up and
+/// jump as Levitate with the height taken from the AMOUNT s49, not s45 (the call's `xmm1` is
+/// `(float)r15d`, `r15d` = the amount argument, `0x140270de8`; gravity is the plain constant, no
+/// `(s47 + 100)` factor, `0x140270dd2`). Launch `sqrt(20 g h)`, apex `10 h` = 20 u (LIVE take 292:
+/// the body sinks 0.41 in the start clip, rises 18.92 u in 18 program ticks of 2.08, 1.95 ... 0.03 and
+/// hangs at +18.51 u, state 7, for the rest of the 450 ticks).
+pub(super) fn wings(c: &mut Combat, players: &mut [Player], caster: usize, def: &SkillDef) -> bool {
+    let (wind, launch) = jump_numbers(c, caster, def.raw[49]);
+    let ticks = if def.raw[53] > 0 { table_ticks(def.raw[53]) } else { u16::MAX };
+    let f = &mut c.fighters[caster];
+    f.status.hover_ticks = ticks;
+    f.status.hover_height = 10.0 * def.raw[49].max(1) as f32;
+    f.status.invisible_ticks = ticks;
+    f.status_hover = true;
+    players[caster].begin_float(wind, launch);
+    c.root_jump_start(caster);
     true
 }
 
@@ -821,6 +844,41 @@ mod tests {
         // (15 - 2 = 13 program ticks = 26 sim ticks for the 15-frame clip).
         assert_eq!(p[0].jump_windup(), 26, "13 program ticks (the body isn't stepped in this harness)");
         assert_eq!(p[0].body_state(), crate::sim::BodyState::Busy, "no cast, no capture while winding up");
+    }
+
+    /// `0x140257b90` enters JUMP_START with the root-motion argument 1, so the clip's root track
+    /// carries the body forward during state 4 and the take-off drops it (LIVE `239_Jump`,
+    /// `056_Levitate`, `292_Demon_s_Wing`: 5.53 u forward by the take-off, then nothing more).
+    #[test]
+    fn the_jump_start_clip_carries_the_body_forward_until_the_take_off() {
+        use crate::sim::{Input, Match};
+        use std::collections::HashMap;
+        let mut col = crate::combat::testkit::floor();
+        for (id, capsule, fields) in [
+            (239, Capsule::Special, vec![(43, 3), (44, move_kind::JUMP), (45, 10)]),
+            (292, Capsule::Status, vec![(42, 100), (43, 4), (45, 13), (49, 2), (53, 450)]),
+        ] {
+            let mut combat = crate::combat::Combat::new(vec![def(id, capsule, 1, &fields)], vec![crate::combat::AURA_PARTICLE; 30]);
+            combat.set_rules(crate::combat::testkit::TEST_RULES);
+            combat.round_ticks = crate::combat::COUNTDOWN_TICKS;
+            // A 16-frame track of 1 u forward per frame.
+            let curve: Vec<[f32; 2]> = (0..16).map(|k| [0.0, k as f32]).collect();
+            let t = HashMap::from([("JUMP_START".to_string(), curve)]);
+            combat.set_root_curves([t.clone(), t]);
+            let mut m = Match::new([Vec3::ZERO, Vec3::new(0.0, 0.0, 200.0)], combat);
+            m.combat.fighters[0].level = 8;
+            m.combat.fighters[0].aura_ticks = 8 * AURA_TICKS_PER_POINT;
+            m.combat.fighters[0].slots[0] = Some(id);
+            m.step([Input { skills: 1, ..Default::default() }, Input::default()], &mut col);
+            let yaw = m.players[0].yaw;
+            let start = m.players[0].pos;
+            for _ in 0..80 {
+                m.step([Input::default(), Input::default()], &mut col);
+            }
+            let moved = m.players[0].pos - start;
+            let forward = moved.x * yaw.sin() + moved.z * yaw.cos();
+            assert!((forward - 13.0).abs() < 1.0, "skill {id}: 13 frames of the root track, not more: {forward}");
+        }
     }
 
     #[test]

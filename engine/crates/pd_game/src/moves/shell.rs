@@ -53,11 +53,16 @@ impl Shell {
         }
     }
 
-    /// The shot flies along the caster's facing (the fire matrix) and homes
-    /// onto the target from its first tick (when `l.target` is set; the sim
-    /// zeroes `Shot::homing` for an unlocked cast).
+    /// The shot flies along the fire matrix's forward row and homes onto the
+    /// target from its first tick (when `l.target` is set; the sim zeroes
+    /// `Shot::homing` for an unlocked cast). READ: `FUN_140264570` copies the
+    /// matrix the fire `FUN_1402626d0` hands the object (the caster's fire
+    /// matrix `+0x12dc0`, translation = the marker / hand) into its own `+0xd0`,
+    /// and `FUN_140264710` moves it along row 2 (`+0xf0`): the facing tipped by
+    /// the press's pitch toward the target point (`Launch::pitch`, `Frame::fire`).
     pub fn launch(&self, def: &SkillDef, l: &Launch) -> Vec<Shot> {
-        let f = Flying { fwd: l.facing, speed: self.speed, end_speed: self.end_speed, ramp: self.ramp, turn: self.turn };
+        let fwd = super::Frame::fire(l.facing, l.pitch).fwd;
+        let f = Flying { fwd, speed: self.speed, end_speed: self.end_speed, ramp: self.ramp, turn: self.turn };
         vec![Shot::new(def, l.spawn, super::Flight::Shell(f), self.life)]
     }
 }
@@ -151,5 +156,21 @@ mod tests {
         sh.away = true;
         sh.step(Some(Vec3::new(10.0, 12.0, 100.0)), &col);
         assert!(sh.heading().x < 0.0, "turned the other way");
+    }
+
+    /// READ `FUN_140264570`: a shell starts along the fire matrix's forward row, which the press's pitch
+    /// (`FUN_140258180` -> `+0x12f8c`, `FUN_1402514c0`) tips toward the target point: a positive pitch (target
+    /// point below the caster's centre) sends it down, a negative one up, 0 keeps the flat facing.
+    #[test]
+    fn a_shell_leaves_along_the_pitched_fire_matrix() {
+        let d = shell([-30, 140, 0, 0, 0]);
+        let heading = |pitch: f32| {
+            let l = Launch { spawn: Vec3::new(0.0, 12.0, 0.0), feet: Vec3::ZERO, pitch, facing: Vec3::Z, target: None, index: 0, col: None, marks: &[] };
+            Shell::from_def(&d).launch(&d, &l).remove(0).heading()
+        };
+        assert!((heading(0.0) - Vec3::Z).length() < 1e-6, "no pitch: the flat facing");
+        let down = heading(0.1);
+        assert!((down.y + 0.1f32.sin()).abs() < 1e-5 && (down.z - 0.1f32.cos()).abs() < 1e-5, "{down}");
+        assert!(heading(-0.1).y > 0.0, "a target point above the caster's centre tips it up");
     }
 }

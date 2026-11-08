@@ -109,7 +109,7 @@ light?) and are supported with MSAA, skinned meshes and the dissolve material.
 `pd_convert stages "<Map dir>" "<cache dir>"` regenerates every stage glb (about 40 s); only
 `st*.glb` changes (bounds and collision files are byte-identical, verified on all 30 stages). Nothing else
 is needed: without the volumes the game still runs (no stage casters, fighters still cast).
-This lane's runs used `%USERPROFILE%\.pdtools\cache-shadows` (a copy of the cache: top-level files copied, chars/fx/sfx/ui junctioned, stage files regenerated).
+This lane's runs used `C:\Users\laure\.pdtools\cache-shadows` (a copy of the cache: top-level files copied, chars/fx/sfx/ui junctioned, stage files regenerated).
 
 ## 6. Not built / unconfirmed
 

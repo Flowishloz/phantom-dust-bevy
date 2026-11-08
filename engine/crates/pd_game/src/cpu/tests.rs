@@ -13,7 +13,7 @@ use pd_formats::collision::Collision;
 use pd_formats::ssb_vm::{Memory, Natives};
 use std::path::PathBuf;
 
-pub const CACHE: &str = r"..\..\cache";
+pub const CACHE: &str = r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\engine\cache";
 
 fn cache() -> Option<PathBuf> {
     let p = PathBuf::from(CACHE);
@@ -473,7 +473,7 @@ fn a_cpu_seat_is_deterministic_and_actually_plays() {
 // ---- cad data -----------------------------------------------------------------------------------------------------
 
 fn game_com() -> PathBuf {
-    PathBuf::from(r"..\..\..\game_files\Assets\Data\com")
+    PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\com")
 }
 
 #[test]
@@ -600,7 +600,7 @@ fn the_cpu_answers_incoming_shots_with_a_dodge_or_guard_and_casts_in_its_band() 
 fn native_call_log_matches_the_python_reference_vm() {
     let Some(mut r) = Rig::new("st03", Some(20)) else { return eprintln!("skipped") };
     let re = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../re/cpu_xcheck.py");
-    let ssb = PathBuf::from(r"..\..\..\game_files\Assets\Data\com\ai\eneprog006.ssb");
+    let ssb = PathBuf::from(r"C:\Users\laure\Documents\GODOT\Phantom Dust Rewrite\game_files\Assets\Data\com\ai\eneprog006.ssb");
     if !re.exists() || !ssb.exists() || std::process::Command::new("python").arg("--version").output().is_err() {
         return eprintln!("skipped: python or the script is not available");
     }
